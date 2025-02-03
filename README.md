@@ -38,4 +38,4 @@ flowchart LR
     B --> D[Secret]
 
     C -- AES/CBC Encryption/Decryption --> F[Apache Commons Crypto]
-    D -- Persist/Load --> E[Local Filesystem (vault/)]
+    D -- Persist/Load --> E[Local Filesystem Vault]
