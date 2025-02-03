@@ -33,7 +33,7 @@ This repository contains a simple console-based interface to:
 
 ```mermaid
 flowchart LR
-    A[Main Class<br>(Console Menu)] --> B[VaultManager]
+    A[Console] --> B[VaultManager]
     B --> C[EncryptDecrypt]
     B --> D[Secret]
 
