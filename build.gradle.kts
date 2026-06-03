@@ -27,7 +27,7 @@ dependencies {
     implementation("org.apache.commons:commons-crypto:1.2.0")
     implementation("org.apache.commons:commons-lang3:3.14.0")
     implementation("commons-io:commons-io:2.16.1")
-    implementation("com.google.code.gson:gson:2.10.1")
+    implementation("com.google.code.gson:gson:2.14.0")
     testImplementation("junit:junit:4.13.2")
     spotbugsPlugins("com.h3xstream.findsecbugs:findsecbugs-plugin:1.13.0")
 }
