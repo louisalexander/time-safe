@@ -11,71 +11,28 @@ import java.util.Collection;
 
 public class VaultManager {
 
+    // NOTE: This class is a stub — it will be fully rewritten in Task 7.
+    // Methods that depended on the old Secret API (persist(), getKey(), getIV(),
+    // getEncryptedData(), Secret(String filename), Secret(Instant,byte[],String,byte[],byte[]))
+    // have been removed because Secret.java was replaced with the new JSON meta + binary enc design.
+
     public void putSecret(int daysUntilDecryption, String secret, String name) {
-
-        Instant decryptionDate = Instant.now().plus(daysUntilDecryption, ChronoUnit.DAYS);
-
-        try (EncryptDecrypt encryptDecrypt = new EncryptDecrypt()) {
-            byte[] key = EncryptDecrypt.generateKey();
-            byte[] iv = EncryptDecrypt.generateIV();
-            byte[] encryptedSecret = EncryptDecrypt.encrypt(secret, key, iv);
-            Secret encryptedDatum = new Secret(decryptionDate, encryptedSecret, name, key, iv);
-            encryptedDatum.persist();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        throw new UnsupportedOperationException("VaultManager not yet updated — see Task 7");
     }
 
     public void updateSecret(Secret secret, int additionalDays) {
-
-        Instant start = null;
-
-        if ( !secret.availableForDecryption() ) {
-            start = secret.getDecryptionDate();
-        } else {
-            System.out.println("Secret is currently unlocked.  Extension will start from current time.");
-            start = Instant.now();
-        }
-
-        secret.setDecryptionDate(start.plus(additionalDays, ChronoUnit.DAYS));
-        secret.persist();
-
-        System.out.println("Secret lock has been extended.  Secret will unlock in "
-                + Instant.now().until(secret.getDecryptionDate(), ChronoUnit.HOURS));
-
-
-
+        throw new UnsupportedOperationException("VaultManager not yet updated — see Task 7");
     }
 
-
     public Collection<Secret> getSecrets() {
-
-        Collection<Secret> secrets = new ArrayList<Secret>();
-        File folder = new File("vault");
-
-        String[] files = folder.list();
-
-        for (String file : files) {
-
-            Secret secret = new Secret("vault/" + file);
-            secrets.add(secret);
-        }
-
-        return secrets;
+        throw new UnsupportedOperationException("VaultManager not yet updated — see Task 7");
     }
 
     public String decrypt(Secret secret) {
-        try (EncryptDecrypt encryptDecrypt = new EncryptDecrypt()) {
-            return EncryptDecrypt.decrypt(secret.getEncryptedData(), secret.getKey(), secret.getIV());
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        return "An error occurred during decryption";
+        throw new UnsupportedOperationException("VaultManager not yet updated — see Task 7");
     }
 
     public void delete(Secret secret) {
-        FileUtils.deleteQuietly(new File("vault/" + secret.getId()));
+        throw new UnsupportedOperationException("VaultManager not yet updated — see Task 7");
     }
-
 }

@@ -1,121 +1,83 @@
 package org.louis;
 
 import com.google.gson.Gson;
-import org.apache.commons.io.output.StringBuilderWriter;
-import org.apache.commons.lang3.builder.ReflectionToStringBuilder;
+import org.apache.commons.io.FileUtils;
 
-import java.io.*;
-import java.time.Duration;
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.time.Period;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.List;
 import java.util.UUID;
 
-public class Secret implements Serializable{
-    private Instant decryptionDate;
-    private byte[] encryptedData;
+public class Secret {
+
+    private String id;
     private String name;
-    private UUID id;
-    private byte[] key;
-    private byte[] iv;
+    private String decryptionDateIso;
+    private String ivBase64;
 
-    public Secret(String filename) {
+    private Secret() {} // for Gson
 
-        Secret secret = null;
-
-        try (ObjectInputStream ois
-                     = new ObjectInputStream(new FileInputStream(filename))) {
-
-            secret = (Secret) ois.readObject();
-
-        } catch (Exception ex) {
-            ex.printStackTrace();
-        }
-
-        this.decryptionDate = secret.decryptionDate;
-        this.encryptedData = secret.encryptedData;
-        this.name = secret.name;
-        this.id = secret.id;
-        this.key = secret.key;
-        this.iv = secret.iv;
-    }
-
-    public Secret(Instant decryptionDate, byte[] encryptedData, String name) {
-        this.decryptionDate = decryptionDate;
-        this.encryptedData = encryptedData;
+    public Secret(String name, Instant decryptionDate, byte[] iv) {
+        this.id = UUID.randomUUID().toString();
         this.name = name;
-        this.id = UUID.randomUUID();
-        this.key = null;
-        this.iv = null;
+        this.decryptionDateIso = decryptionDate.toString();
+        this.ivBase64 = Base64.getEncoder().encodeToString(iv);
     }
 
-    public Secret(Instant decryptionDate, byte[] encryptedData, String name, byte[] key, byte[] iv) {
-        this.decryptionDate = decryptionDate;
-        this.encryptedData = encryptedData;
-        this.name = name;
-        this.id = UUID.randomUUID();
-        this.key = key;
-        this.iv = iv;
-    }
+    public String getId()               { return id; }
+    public String getName()             { return name; }
+    public Instant getDecryptionDate()  { return Instant.parse(decryptionDateIso); }
+    public byte[] getIv()               { return Base64.getDecoder().decode(ivBase64); }
 
-    public Instant getDecryptionDate() {
-        return decryptionDate;
-    }
-
-    public byte[] getEncryptedData() {
-        return encryptedData;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public String getId() {
-        return id.toString();
-    }
-
-    public byte[] getKey() {
-        return key;
-    }
-
-    public byte[] getIV() {
-        return iv;
-    }
-
-    public void persist() {
-
-        try (ObjectOutputStream oos =
-                     new ObjectOutputStream(new FileOutputStream("vault/" + id.toString()))) {
-
-            oos.writeObject(this);
-            System.out.println("Done");
-
-        } catch (Exception ex) {
-            ex.printStackTrace();
-        }
+    public void setDecryptionDate(Instant newDate) {
+        this.decryptionDateIso = newDate.toString();
     }
 
     public boolean availableForDecryption() {
-        return Instant.now().isAfter(this.decryptionDate);
+        return Instant.now().isAfter(getDecryptionDate());
     }
 
-    public void setDecryptionDate(Instant decryptionDate) {
-        this.decryptionDate = decryptionDate;
-
+    public void saveMeta(String vaultDir) throws IOException {
+        FileUtils.writeStringToFile(
+            new File(vaultDir, id + ".meta"),
+            new Gson().toJson(this),
+            StandardCharsets.UTF_8);
     }
+
+    public static Secret loadMeta(String vaultDir, String uuid) throws IOException {
+        String json = FileUtils.readFileToString(new File(vaultDir, uuid + ".meta"), StandardCharsets.UTF_8);
+        return new Gson().fromJson(json, Secret.class);
+    }
+
+    public void saveEncrypted(String vaultDir, byte[] data) throws IOException {
+        FileUtils.writeByteArrayToFile(new File(vaultDir, id + ".enc"), data);
+    }
+
+    public static byte[] loadEncrypted(String vaultDir, String uuid) throws IOException {
+        return FileUtils.readFileToByteArray(new File(vaultDir, uuid + ".enc"));
+    }
+
+    public static List<Secret> list(String vaultDir) throws IOException {
+        File dir = new File(vaultDir);
+        List<Secret> secrets = new ArrayList<>();
+        String[] files = dir.list((d, n) -> n.endsWith(".meta"));
+        if (files == null) return secrets;
+        for (String file : files)
+            secrets.add(loadMeta(vaultDir, file.replace(".meta", "")));
+        return secrets;
+    }
+
+    @Override
     public String toString() {
-        try( StringBuilderWriter stringBuilderWriter = new StringBuilderWriter()) {
-
-            stringBuilderWriter.append("Name: ");
-            stringBuilderWriter.append(this.name);
-            stringBuilderWriter.append("\n");
-            stringBuilderWriter.append("ID: ");
-            stringBuilderWriter.append(this.id.toString());
-            stringBuilderWriter.append("\n");
-            stringBuilderWriter.append("Hours until unlock: ");
-            stringBuilderWriter.append(availableForDecryption() ? "0" : Instant.now().until(this.getDecryptionDate(), ChronoUnit.HOURS) + " hours");
-
-            return stringBuilderWriter.toString();
-        }
+        long hours = availableForDecryption() ? 0
+            : Instant.now().until(getDecryptionDate(), ChronoUnit.HOURS);
+        return "Name: " + name
+            + "\nID: " + id
+            + "\nHours until unlock: " + (hours == 0 ? "Unlocked" : hours + " hours");
     }
 }
