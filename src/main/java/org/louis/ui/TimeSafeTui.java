@@ -19,6 +19,8 @@ import com.googlecode.lanterna.screen.TerminalScreen;
 import com.googlecode.lanterna.terminal.DefaultTerminalFactory;
 import com.googlecode.lanterna.terminal.Terminal;
 import java.io.IOException;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -50,7 +52,12 @@ public class TimeSafeTui {
 
   /** Entry point: initialize screen and start the event loop. */
   public void run() throws IOException {
-    Terminal terminal = new DefaultTerminalFactory().createTerminal();
+    Terminal terminal =
+        new DefaultTerminalFactory(
+                new PrintStream(System.out, true, StandardCharsets.UTF_8),
+                System.in,
+                StandardCharsets.UTF_8)
+            .createTerminal();
     Screen screen = new TerminalScreen(terminal);
     screen.startScreen();
 
@@ -129,10 +136,10 @@ public class TimeSafeTui {
     statusRow.addComponent(new Label("Status: "));
     Label statusLabel;
     if (ready) {
-      statusLabel = new Label("[READY]  READY TO DECRYPT");
+      statusLabel = new Label("🔓  READY TO DECRYPT");
       statusLabel.setForegroundColor(TextColor.ANSI.GREEN);
     } else {
-      statusLabel = new Label("[LOCKED] Locked");
+      statusLabel = new Label("🔒  Locked");
       statusLabel.setForegroundColor(TextColor.ANSI.RED);
     }
     statusRow.addComponent(statusLabel);
@@ -542,19 +549,29 @@ public class TimeSafeTui {
   // ── Secret list entry label helper ───────────────────────────────────────
 
   private String formatSecretEntry(Secret s) {
-    long days = ChronoUnit.DAYS.between(Instant.now(), s.getDecryptionDate());
     String name = s.getName();
     if (name.length() > 22) name = name.substring(0, 20) + "..";
     String padded = String.format("%-24s", name);
     if (s.availableForDecryption()) {
-      return "  [READY]   " + padded + "  READY TO DECRYPT";
+      return "  🔓  " + padded + "  READY TO DECRYPT";
     } else {
       String date =
           DateTimeFormatter.ofPattern("MMM d yyyy")
               .format(s.getDecryptionDate().atZone(ZoneId.systemDefault()));
-      String daysStr = days == 0 ? "< 1 day" : days + (days == 1 ? " day " : " days");
-      return "  [LOCKED]  " + padded + "  " + daysStr + "  (" + date + ")";
+      String timeRemaining = formatTimeRemaining(s.getDecryptionDate());
+      return "  🔒  " + padded + "  " + timeRemaining + "  (" + date + ")";
     }
+  }
+
+  private String formatTimeRemaining(Instant decryptionDate) {
+    long totalMinutes = ChronoUnit.MINUTES.between(Instant.now(), decryptionDate);
+    if (totalMinutes <= 0) return "READY";
+    long days = totalMinutes / (60 * 24);
+    long hours = (totalMinutes % (60 * 24)) / 60;
+    if (days > 0 && hours > 0) return days + "d " + hours + "h";
+    if (days > 0) return days + "d";
+    if (hours > 0) return hours + "h";
+    return "< 1h";
   }
 
   // ── Helper: build main window panel (for post-setup rebuild) ─────────────
@@ -562,11 +579,22 @@ public class TimeSafeTui {
   private Panel buildMainWindowPanel() {
     Panel root = new Panel(new com.googlecode.lanterna.gui2.BorderLayout());
 
-    // TOP: header
-    Panel header = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.HORIZONTAL));
-    Label title = new Label(" TimeSafe for Secrets ");
-    title.setForegroundColor(TextColor.ANSI.CYAN);
-    header.addComponent(title);
+    // TOP: ASCII art header
+    Panel header = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.VERTICAL));
+    String[] artLines = {
+      "  ███████╗█╗███╗   ███╗███████╗███████╗ █████╗ ███████╗███████╗",
+      "     ██╔══╝██║████╗ ████║██╔════╝██╔════╝██╔══██╗██╔════╝██╔════╝",
+      "     ██║   ██║██╔████╔██║█████╗  ███████╗███████║█████╗  █████╗  ",
+      "     ██║   ██║██║╚██╔╝██║██╔══╝  ╚════██║██╔══██║██╔══╝  ██╔══╝  ",
+      "     ██║   ██║██║ ╚═╝ ██║███████╗███████║██║  ██║██║     ███████╗",
+      "     ╚═╝   ╚═╝╚═╝     ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝╚═╝     ╚══════╝",
+      "                  your secrets, locked in time."
+    };
+    for (int i = 0; i < artLines.length; i++) {
+      Label line = new Label(artLines[i]);
+      line.setForegroundColor(i < artLines.length - 1 ? TextColor.ANSI.CYAN : TextColor.ANSI.WHITE);
+      header.addComponent(line);
+    }
     root.addComponent(header, com.googlecode.lanterna.gui2.BorderLayout.Location.TOP);
 
     // CENTER: content (secrets list or message) — will fill available space
