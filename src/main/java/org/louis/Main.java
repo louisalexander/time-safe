@@ -125,11 +125,19 @@ public class Main {
     }
 
     private static void decryptSecret(Secret secret) {
-        if (secret.availableForDecryption()) {
-            System.out.println(vaultManager.decrypt(secret));
-        } else {
+        if (!secret.availableForDecryption()) {
             System.out.println("Decryption date not met!");
-            System.out.println("Secret will unlock in " + Instant.now().until(secret.getDecryptionDate(), ChronoUnit.HOURS) + " hours ¯\\_(ツ)_/¯");
+            System.out.println("Secret will unlock in " + Instant.now().until(secret.getDecryptionDate(), ChronoUnit.HOURS) + " hours");
+            return;
+        }
+        Scanner in = new Scanner(System.in);
+        System.out.print("Paste the base64 key from your unlock email:\n> ");
+        String keyB64 = in.nextLine().trim();
+        try {
+            byte[] key = java.util.Base64.getDecoder().decode(keyB64);
+            System.out.println("\nDecrypted: " + vaultManager.decrypt(secret, key));
+        } catch (IllegalArgumentException e) {
+            System.out.println("Invalid key format.");
         }
     }
 

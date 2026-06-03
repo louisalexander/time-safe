@@ -102,17 +102,6 @@ public class VaultManager {
         }
     }
 
-    public String decrypt(Secret secret) {
-        try {
-            byte[] keyBytes = github.fetchFile("vault/keys/" + secret.getId() + ".key");
-            String keyB64 = new String(keyBytes).trim();
-            byte[] key = Base64.getDecoder().decode(keyB64);
-            return decrypt(secret, key);
-        } catch (Exception e) {
-            return "Decryption failed (could not fetch key): " + e.getMessage();
-        }
-    }
-
     public void delete(Secret secret) {
         try {
             FileUtils.deleteQuietly(new File(VAULT_DIR, secret.getId() + ".meta"));
