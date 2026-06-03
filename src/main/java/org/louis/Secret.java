@@ -16,6 +16,8 @@ public class Secret implements Serializable{
     private byte[] encryptedData;
     private String name;
     private UUID id;
+    private byte[] key;
+    private byte[] iv;
 
     public Secret(String filename) {
 
@@ -34,6 +36,8 @@ public class Secret implements Serializable{
         this.encryptedData = secret.encryptedData;
         this.name = secret.name;
         this.id = secret.id;
+        this.key = secret.key;
+        this.iv = secret.iv;
     }
 
     public Secret(Instant decryptionDate, byte[] encryptedData, String name) {
@@ -41,6 +45,17 @@ public class Secret implements Serializable{
         this.encryptedData = encryptedData;
         this.name = name;
         this.id = UUID.randomUUID();
+        this.key = null;
+        this.iv = null;
+    }
+
+    public Secret(Instant decryptionDate, byte[] encryptedData, String name, byte[] key, byte[] iv) {
+        this.decryptionDate = decryptionDate;
+        this.encryptedData = encryptedData;
+        this.name = name;
+        this.id = UUID.randomUUID();
+        this.key = key;
+        this.iv = iv;
     }
 
     public Instant getDecryptionDate() {
@@ -57,6 +72,14 @@ public class Secret implements Serializable{
 
     public String getId() {
         return id.toString();
+    }
+
+    public byte[] getKey() {
+        return key;
+    }
+
+    public byte[] getIV() {
+        return iv;
     }
 
     public void persist() {

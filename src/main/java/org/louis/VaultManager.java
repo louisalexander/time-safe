@@ -16,8 +16,10 @@ public class VaultManager {
         Instant decryptionDate = Instant.now().plus(daysUntilDecryption, ChronoUnit.DAYS);
 
         try (EncryptDecrypt encryptDecrypt = new EncryptDecrypt()) {
-            byte[] encryptedSecret = encryptDecrypt.encrypt(secret);
-            Secret encryptedDatum = new Secret(decryptionDate, encryptedSecret, name);
+            byte[] key = EncryptDecrypt.generateKey();
+            byte[] iv = EncryptDecrypt.generateIV();
+            byte[] encryptedSecret = EncryptDecrypt.encrypt(secret, key, iv);
+            Secret encryptedDatum = new Secret(decryptionDate, encryptedSecret, name, key, iv);
             encryptedDatum.persist();
         } catch (Exception e) {
             e.printStackTrace();
@@ -64,7 +66,7 @@ public class VaultManager {
 
     public String decrypt(Secret secret) {
         try (EncryptDecrypt encryptDecrypt = new EncryptDecrypt()) {
-            return encryptDecrypt.decrypt(secret.getEncryptedData());
+            return EncryptDecrypt.decrypt(secret.getEncryptedData(), secret.getKey(), secret.getIV());
         } catch (Exception e) {
             e.printStackTrace();
         }

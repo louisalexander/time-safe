@@ -8,50 +8,49 @@ import javax.crypto.spec.SecretKeySpec;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.util.Properties;
 
 public class EncryptDecrypt implements AutoCloseable {
 
-    private static final SecretKeySpec key = new SecretKeySpec(getUTF8Bytes("1234567890123456"), "AES");
-    private static final IvParameterSpec iv = new IvParameterSpec(getUTF8Bytes("1234567890123456"));
-    private static final String transform = "AES/CBC/PKCS5Padding";
-    private static final Properties properties = new Properties();
+    private static final String TRANSFORM = "AES/CBC/PKCS5Padding";
+    private static final Properties PROPERTIES = new Properties();
 
-    private static byte[] getUTF8Bytes(String input) {
-        return input.getBytes(StandardCharsets.UTF_8);
+    public static byte[] generateKey() {
+        byte[] key = new byte[32];
+        new SecureRandom().nextBytes(key);
+        return key;
     }
 
-    public static byte[] encrypt(String input) throws IOException {
+    public static byte[] generateIV() {
+        byte[] iv = new byte[16];
+        new SecureRandom().nextBytes(iv);
+        return iv;
+    }
 
-        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-
-        try (CryptoOutputStream cos = new CryptoOutputStream(transform, properties, outputStream, key, iv)) {
-            cos.write(getUTF8Bytes(input));
+    public static byte[] encrypt(String input, byte[] key, byte[] iv) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (CryptoOutputStream cos = new CryptoOutputStream(
+                TRANSFORM, PROPERTIES, out,
+                new SecretKeySpec(key, "AES"), new IvParameterSpec(iv))) {
+            cos.write(input.getBytes(StandardCharsets.UTF_8));
             cos.flush();
         }
-
-        return outputStream.toByteArray();
+        return out.toByteArray();
     }
 
-    public static String decrypt(byte[] encrypted) throws IOException {
-        // Decryption with CryptoInputStream.
-        InputStream inputStream = new ByteArrayInputStream(encrypted);
-
-        try (CryptoInputStream cis = new CryptoInputStream(transform, properties, inputStream, key, iv)) {
-            byte[] decryptedData = new byte[1024];
-            int decryptedLen = 0;
-            int i;
-            while ((i = cis.read(decryptedData, decryptedLen, decryptedData.length - decryptedLen)) > -1) {
-                decryptedLen += i;
-            }
-            return new String(decryptedData, 0, decryptedLen, StandardCharsets.UTF_8);
+    public static String decrypt(byte[] encrypted, byte[] key, byte[] iv) throws IOException {
+        try (CryptoInputStream cis = new CryptoInputStream(
+                TRANSFORM, PROPERTIES, new ByteArrayInputStream(encrypted),
+                new SecretKeySpec(key, "AES"), new IvParameterSpec(iv))) {
+            byte[] buf = new byte[1024];
+            int len = 0, n;
+            while ((n = cis.read(buf, len, buf.length - len)) > -1) len += n;
+            return new String(buf, 0, len, StandardCharsets.UTF_8);
         }
     }
 
     @Override
-    public void close() throws Exception {
-
-    }
+    public void close() {}
 }
