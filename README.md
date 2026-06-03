@@ -23,10 +23,10 @@ Designed for locking yourself out of sites you want to avoid. The key is held in
      ╚═╝   ╚═╝╚═╝     ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝╚═╝     ╚══════╝
                   your secrets, locked in time.
 
-  ✗  Vault Gmail                              47d 3h  (Jul 20 2026)
-  ✗  Empornium                                2d 23h  (Jun  6 2026)
-  ✗  Site B                                     23h  (Jun  4 2026)
-  ✓  Old Test                             READY TO DECRYPT
+  ✗  Work Email                          47d 3h  (Jul 20 2026)
+  ✗  Social Media                         2d 23h  (Jun  6 2026)
+  ✗  Streaming Site                           23h  (Jun  4 2026)
+  ✓  Old Account                      READY TO DECRYPT
 
 [ Add Secret ]   [ Setup ]   [ Quit ]
 ```
@@ -34,13 +34,13 @@ Designed for locking yourself out of sites you want to avoid. The key is held in
 Selecting a secret opens its detail view:
 
 ```
-  ┌──────────────── Empornium ──────────────────┐
+  ┌─────────────── Social Media ────────────────┐
   │  Status:   ✗  Locked                        │
   │  Unlocks:  Jun 6, 2026  (2 days remaining)  │
-  │  ID:       a3f8c2d1...                       │
-  │                                              │
-  │  [ Extend Lock ]  [ Delete ]  [ Close ]      │
-  └──────────────────────────────────────────────┘
+  │  ID:       a3f8c2d1...                      │
+  │                                             │
+  │  [ Extend Lock ]  [ Delete ]  [ Close ]     │
+  └─────────────────────────────────────────────┘
 ```
 
 ---
