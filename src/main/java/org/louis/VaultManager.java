@@ -4,6 +4,7 @@ import org.apache.commons.io.FileUtils;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
@@ -41,10 +42,10 @@ public class VaultManager {
                 readLocal(VAULT_DIR + "/" + secret.getId() + ".meta"),
                 "lock: add metadata for " + name);
             github.pushFile("vault/keys/" + secret.getId() + ".key",
-                (keyB64 + "\n").getBytes(),
+                (keyB64 + "\n").getBytes(StandardCharsets.UTF_8),
                 "lock: add key for " + name);
             github.pushFile(".github/workflows/unlock-" + secret.getId() + ".yml",
-                github.buildWorkflowYaml(secret).getBytes(),
+                github.buildWorkflowYaml(secret).getBytes(StandardCharsets.UTF_8),
                 "lock: add unlock workflow for " + name);
 
             System.out.println("Done. Secret locked until " + unlockDate);
@@ -73,7 +74,7 @@ public class VaultManager {
                 readLocal(vaultDir + "/" + secret.getId() + ".meta"),
                 "extend: update lock date for " + secret.getName());
             github.pushFile(".github/workflows/unlock-" + secret.getId() + ".yml",
-                github.buildWorkflowYaml(secret).getBytes(),
+                github.buildWorkflowYaml(secret).getBytes(StandardCharsets.UTF_8),
                 "extend: update workflow for " + secret.getName());
 
             System.out.println("Lock extended. Unlocks in "

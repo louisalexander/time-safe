@@ -2,6 +2,7 @@ package org.louis;
 
 import org.junit.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
@@ -45,7 +46,7 @@ public class GitHubVaultTest {
     public void sendKeyScriptIsNonEmpty() {
         byte[] script = GitHubVault.getSendKeyScript();
         assertTrue(script.length > 0);
-        String content = new String(script);
+        String content = new String(script, StandardCharsets.UTF_8);
         assertTrue(content.contains("VAULT_KEY"));
         assertTrue(content.contains("smtp.gmail.com"));
         assertTrue(content.contains("DELIVERY_EMAIL"));
