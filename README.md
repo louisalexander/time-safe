@@ -23,10 +23,10 @@ Designed for locking yourself out of sites you want to avoid. The key is held in
      ╚═╝   ╚═╝╚═╝     ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝╚═╝     ╚══════╝
                   your secrets, locked in time.
 
-  ✗  Work Email                          47d 3h  (Jul 20 2026)
-  ✗  Social Media                         2d 23h  (Jun  6 2026)
+  ✗  Work Email                            47d 3h  (Jul 20 2026)
+  ✗  Social Media                          2d 23h  (Jun  6 2026)
   ✗  Streaming Site                           23h  (Jun  4 2026)
-  ✓  Old Account                      READY TO DECRYPT
+  ✓  Old Account                                READY TO DECRYPT
 
 [ Add Secret ]   [ Setup ]   [ Quit ]
 ```
