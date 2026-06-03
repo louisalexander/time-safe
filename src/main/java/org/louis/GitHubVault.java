@@ -2,6 +2,9 @@ package org.louis;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import com.goterl.lazysodium.LazySodiumJava;
+import com.goterl.lazysodium.SodiumJava;
+import com.goterl.lazysodium.interfaces.Box;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -17,6 +20,7 @@ public class GitHubVault {
   private static final String API = "https://api.github.com";
   private final Config config;
   private final HttpClient http = HttpClient.newHttpClient();
+  private final LazySodiumJava sodium = new LazySodiumJava(new SodiumJava());
 
   public GitHubVault(Config config) {
     this.config = config;
@@ -57,6 +61,8 @@ public class GitHubVault {
   public void initRepo() throws IOException {
     pushFile("vault/keys/.gitkeep", new byte[0], "chore: initialize vault structure");
     pushFile("vault/scripts/send_key.py", getSendKeyScript(), "chore: add key delivery script");
+    setRepoSecret("SMTP_USER", config.smtpUser);
+    setRepoSecret("SMTP_PASS", config.smtpPass);
   }
 
   public String buildWorkflowYaml(Secret secret) {
@@ -84,8 +90,8 @@ public class GitHubVault {
                     UNLOCK_DAY: '%d'
                     SECRET_NAME: %s
                     DELIVERY_EMAIL: %s
-                    SMTP_USER: %s
-                    SMTP_PASS: %s
+                    SMTP_USER: ${{ secrets.SMTP_USER }}
+                    SMTP_PASS: ${{ secrets.SMTP_PASS }}
                   run: python3 vault/scripts/send_key.py
           """
         .formatted(
@@ -97,9 +103,7 @@ public class GitHubVault {
             month,
             day,
             secret.getName(),
-            config.deliveryEmail,
-            config.smtpUser,
-            config.smtpPass);
+            config.deliveryEmail);
   }
 
   public static byte[] getSendKeyScript() {
@@ -145,6 +149,23 @@ public class GitHubVault {
             + "    s.sendmail(SMTP_USER, [DELIVERY_EMAIL], msg.as_string())\n"
             + "    print('Key delivered successfully.')\n";
     return script.getBytes(StandardCharsets.UTF_8);
+  }
+
+  public void setRepoSecret(String name, String value) throws IOException {
+    String keyResponse =
+        request("GET", "/repos/" + config.githubRepo + "/actions/secrets/public-key", null);
+    JsonObject keyJson = new Gson().fromJson(keyResponse, JsonObject.class);
+    String keyId = keyJson.get("key_id").getAsString();
+    byte[] recipientPublicKey = Base64.getDecoder().decode(keyJson.get("key").getAsString());
+
+    byte[] plaintext = value.getBytes(StandardCharsets.UTF_8);
+    byte[] ciphertext = new byte[plaintext.length + Box.SEALBYTES];
+    sodium.getSodium().crypto_box_seal(ciphertext, plaintext, plaintext.length, recipientPublicKey);
+
+    JsonObject body = new JsonObject();
+    body.addProperty("encrypted_value", Base64.getEncoder().encodeToString(ciphertext));
+    body.addProperty("key_id", keyId);
+    request("PUT", "/repos/" + config.githubRepo + "/actions/secrets/" + name, body.toString());
   }
 
   // ── Private helpers ──────────────────────────────────────────────────────
