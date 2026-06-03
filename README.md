@@ -1,4 +1,5 @@
 # TimeSafe for Secrets
+[![CI](https://github.com/louisalexander/time-safe/actions/workflows/ci.yml/badge.svg)](https://github.com/louisalexander/time-safe/actions/workflows/ci.yml)
 
 A **TimeSafe** application that encrypts secrets and locks them until a specified future date. The system uses AES encryption (via [Apache Commons Crypto](https://commons.apache.org/proper/commons-crypto/)) to protect data, and Java’s serialization to store encrypted objects in a local `vault` directory on disk.
 
