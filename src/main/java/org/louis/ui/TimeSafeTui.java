@@ -47,6 +47,7 @@ public class TimeSafeTui {
   private Config config;
   private VaultManager vaultManager;
   private MultiWindowTextGUI gui;
+  private Screen screen;
   private BasicWindow mainWindow;
   private Panel mainContentPanel;
 
@@ -58,7 +59,7 @@ public class TimeSafeTui {
                 System.in,
                 StandardCharsets.UTF_8)
             .createTerminal();
-    Screen screen = new TerminalScreen(terminal);
+    screen = new TerminalScreen(terminal);
     screen.startScreen();
 
     gui =
@@ -136,10 +137,10 @@ public class TimeSafeTui {
     statusRow.addComponent(new Label("Status: "));
     Label statusLabel;
     if (ready) {
-      statusLabel = new Label("🔓  READY TO DECRYPT");
+      statusLabel = new Label("✓  READY TO DECRYPT");
       statusLabel.setForegroundColor(TextColor.ANSI.GREEN);
     } else {
-      statusLabel = new Label("🔒  Locked");
+      statusLabel = new Label("✗  Locked");
       statusLabel.setForegroundColor(TextColor.ANSI.RED);
     }
     statusRow.addComponent(statusLabel);
@@ -549,17 +550,32 @@ public class TimeSafeTui {
   // ── Secret list entry label helper ───────────────────────────────────────
 
   private String formatSecretEntry(Secret s) {
+    int termWidth = 80;
+    if (screen != null) {
+      try {
+        termWidth = screen.getTerminalSize().getColumns();
+      } catch (Exception ignored) {
+      }
+    }
+
     String name = s.getName();
     if (name.length() > 22) name = name.substring(0, 20) + "..";
     String padded = String.format("%-24s", name);
+
     if (s.availableForDecryption()) {
-      return "  🔓  " + padded + "  READY TO DECRYPT";
+      String left = "  ✓  " + padded;
+      String right = "READY TO DECRYPT";
+      int gap = Math.max(2, termWidth - left.length() - right.length() - 2);
+      return left + " ".repeat(gap) + right;
     } else {
       String date =
           DateTimeFormatter.ofPattern("MMM d yyyy")
               .format(s.getDecryptionDate().atZone(ZoneId.systemDefault()));
-      String timeRemaining = formatTimeRemaining(s.getDecryptionDate());
-      return "  🔒  " + padded + "  " + timeRemaining + "  (" + date + ")";
+      String timeStr = formatTimeRemaining(s.getDecryptionDate());
+      String left = "  ✗  " + padded;
+      String right = timeStr + "  (" + date + ")";
+      int gap = Math.max(2, termWidth - left.length() - right.length() - 2);
+      return left + " ".repeat(gap) + right;
     }
   }
 
