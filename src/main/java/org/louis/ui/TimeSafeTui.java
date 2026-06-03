@@ -608,7 +608,8 @@ public class TimeSafeTui {
     };
     for (int i = 0; i < artLines.length; i++) {
       Label line = new Label(artLines[i]);
-      line.setForegroundColor(i < artLines.length - 1 ? TextColor.ANSI.CYAN : TextColor.ANSI.WHITE);
+      line.setForegroundColor(
+          i < artLines.length - 1 ? TextColor.ANSI.CYAN : TextColor.ANSI.DEFAULT);
       header.addComponent(line);
     }
     root.addComponent(header, com.googlecode.lanterna.gui2.BorderLayout.Location.TOP);
