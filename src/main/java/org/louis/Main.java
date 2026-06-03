@@ -13,7 +13,18 @@ import java.util.Scanner;
  */
 public class Main {
 
-    private static VaultManager vaultManager = new VaultManager();
+    private static final String VAULT_DIR = "vault";
+    private static VaultManager vaultManager = createVaultManager();
+
+    private static VaultManager createVaultManager() {
+        try {
+            return new VaultManager(Config.load());
+        } catch (IOException e) {
+            System.err.println("Failed to load config: " + e.getMessage());
+            System.exit(1);
+            return null; // unreachable
+        }
+    }
 
     @SuppressWarnings("InfiniteLoopStatement")
     public static void main(String[] args) throws IOException {
@@ -146,7 +157,7 @@ public class Main {
         System.out.print("How many days do you want to extend the secret lock for?\n> ");
         int days = in.nextInt();
 
-        vaultManager.updateSecret(secret, days);
+        vaultManager.updateSecret(secret, days, VAULT_DIR);
     }
 
     public static void captureNewSecret() {
