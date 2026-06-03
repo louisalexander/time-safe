@@ -63,7 +63,7 @@ public class GitHubVault {
         int day   = unlock.getDayOfMonth();
         int month = unlock.getMonthValue();
         int year  = unlock.getYear();
-        String cron = String.format("0 9 %d * *", day);
+        String cron = String.format("0 9 %d %d *", day, month);
 
         return "name: Unlock " + secret.getName() + "\n"
             + "on:\n"

@@ -44,10 +44,11 @@ public class EncryptDecrypt implements AutoCloseable {
         try (CryptoInputStream cis = new CryptoInputStream(
                 TRANSFORM, PROPERTIES, new ByteArrayInputStream(encrypted),
                 new SecretKeySpec(key, "AES"), new IvParameterSpec(iv))) {
-            byte[] buf = new byte[1024];
-            int len = 0, n;
-            while ((n = cis.read(buf, len, buf.length - len)) > -1) len += n;
-            return new String(buf, 0, len, StandardCharsets.UTF_8);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            int n;
+            while ((n = cis.read(buf)) > -1) out.write(buf, 0, n);
+            return out.toString(StandardCharsets.UTF_8.name());
         }
     }
 
