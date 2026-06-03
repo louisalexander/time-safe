@@ -3,7 +3,7 @@ plugins {
     application
     id("com.github.johnrengelman.shadow") version "8.1.1"
     id("com.diffplug.spotless") version "6.25.0"
-    id("com.github.spotbugs") version "6.0.18"
+    id("com.github.spotbugs") version "6.5.5"
 }
 
 group = "org.louis"
