@@ -2,19 +2,21 @@ package org.louis;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
-import java.io.*;
-import java.net.HttpURLConnection;
-import java.net.URL;
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.Base64;
-import org.apache.commons.io.IOUtils;
 
 public class GitHubVault {
 
   private static final String API = "https://api.github.com";
   private final Config config;
+  private final HttpClient http = HttpClient.newHttpClient();
 
   public GitHubVault(Config config) {
     this.config = config;
@@ -62,49 +64,42 @@ public class GitHubVault {
     int day = unlock.getDayOfMonth();
     int month = unlock.getMonthValue();
     int year = unlock.getYear();
-    String cron = String.format("0 9 %d %d *", day, month);
 
-    return "name: Unlock "
-        + secret.getName()
-        + "\n"
-        + "on:\n"
-        + "  schedule:\n"
-        + "    - cron: '"
-        + cron
-        + "'\n"
-        + "  workflow_dispatch:\n"
-        + "jobs:\n"
-        + "  send-key:\n"
-        + "    runs-on: ubuntu-latest\n"
-        + "    steps:\n"
-        + "      - uses: actions/checkout@v3\n"
-        + "      - name: Send key\n"
-        + "        env:\n"
-        + "          UUID: "
-        + secret.getId()
-        + "\n"
-        + "          UNLOCK_YEAR: '"
-        + year
-        + "'\n"
-        + "          UNLOCK_MONTH: '"
-        + month
-        + "'\n"
-        + "          UNLOCK_DAY: '"
-        + day
-        + "'\n"
-        + "          SECRET_NAME: "
-        + secret.getName()
-        + "\n"
-        + "          DELIVERY_EMAIL: "
-        + config.deliveryEmail
-        + "\n"
-        + "          SMTP_USER: "
-        + config.smtpUser
-        + "\n"
-        + "          SMTP_PASS: "
-        + config.smtpPass
-        + "\n"
-        + "        run: python3 vault/scripts/send_key.py\n";
+    return """
+          name: Unlock %s
+          on:
+            schedule:
+              - cron: '0 9 %d %d *'
+            workflow_dispatch:
+          jobs:
+            send-key:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                - name: Send key
+                  env:
+                    UUID: %s
+                    UNLOCK_YEAR: '%d'
+                    UNLOCK_MONTH: '%d'
+                    UNLOCK_DAY: '%d'
+                    SECRET_NAME: %s
+                    DELIVERY_EMAIL: %s
+                    SMTP_USER: %s
+                    SMTP_PASS: %s
+                  run: python3 vault/scripts/send_key.py
+          """
+        .formatted(
+            secret.getName(),
+            day,
+            month,
+            secret.getId(),
+            year,
+            month,
+            day,
+            secret.getName(),
+            config.deliveryEmail,
+            config.smtpUser,
+            config.smtpPass);
   }
 
   public static byte[] getSendKeyScript() {
@@ -165,24 +160,28 @@ public class GitHubVault {
   }
 
   private String request(String method, String endpoint, String body) throws IOException {
-    HttpURLConnection conn = (HttpURLConnection) new URL(API + endpoint).openConnection();
-    conn.setRequestMethod(method);
-    conn.setRequestProperty("Authorization", "Bearer " + config.githubToken);
-    conn.setRequestProperty("Accept", "application/vnd.github+json");
-    conn.setRequestProperty("Content-Type", "application/json");
+    var bodyPublisher =
+        body != null
+            ? HttpRequest.BodyPublishers.ofString(body)
+            : HttpRequest.BodyPublishers.noBody();
 
-    if (body != null) {
-      conn.setDoOutput(true);
-      try (OutputStream os = conn.getOutputStream()) {
-        os.write(body.getBytes(StandardCharsets.UTF_8));
-      }
+    var req =
+        HttpRequest.newBuilder()
+            .uri(URI.create(API + endpoint))
+            .header("Authorization", "Bearer " + config.githubToken)
+            .header("Accept", "application/vnd.github+json")
+            .header("Content-Type", "application/json")
+            .method(method, bodyPublisher)
+            .build();
+
+    try {
+      HttpResponse<String> response = http.send(req, HttpResponse.BodyHandlers.ofString());
+      if (response.statusCode() >= 400)
+        throw new IOException("GitHub API " + response.statusCode() + ": " + response.body());
+      return response.body();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IOException("Request interrupted", e);
     }
-
-    int status = conn.getResponseCode();
-    InputStream stream = (status >= 400) ? conn.getErrorStream() : conn.getInputStream();
-    String response = (stream != null) ? IOUtils.toString(stream, StandardCharsets.UTF_8) : "";
-
-    if (status >= 400) throw new IOException("GitHub API " + status + ": " + response);
-    return response;
   }
 }
