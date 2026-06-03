@@ -293,13 +293,14 @@ public class TimeSafeTui {
                     String msg = ex.getMessage() != null ? ex.getMessage() : ex.toString();
                     if (msg.contains("404")) {
                       showError(
-                          "Vault Not Found",
-                          "GitHub returned 404. Check that your vault repo exists\n"
-                              + "and your PAT has access to it.\n\n"
-                              + "Repo setting: "
-                              + (config != null ? config.githubRepo : "unknown")
-                              + "\n\n"
-                              + "You can re-run Setup to update your credentials.");
+                          "GitHub 404",
+                          "GitHub returned 404 — most likely cause:\n\n"
+                              + "  Your PAT is missing the 'workflow' scope.\n"
+                              + "  Pushing to .github/workflows/ requires it.\n\n"
+                              + "Fix: regenerate your PAT at github.com/settings/tokens\n"
+                              + "with both 'repo' and 'workflow' scopes, then re-run Setup.\n\n"
+                              + "Vault repo: "
+                              + (config != null ? config.githubRepo : "unknown"));
                     } else {
                       showError("Failed to Lock Secret", msg);
                     }
@@ -467,13 +468,14 @@ public class TimeSafeTui {
                     String msg = ex.getMessage() != null ? ex.getMessage() : ex.toString();
                     if (msg.contains("404")) {
                       showError(
-                          "Vault Not Found",
-                          "GitHub returned 404. Check that your vault repo exists\n"
-                              + "and your PAT has access to it.\n\n"
-                              + "Repo setting: "
-                              + newConfig.githubRepo
-                              + "\n\n"
-                              + "You can re-run Setup to update your credentials.");
+                          "GitHub 404",
+                          "GitHub returned 404 — most likely cause:\n\n"
+                              + "  Your PAT is missing the 'workflow' scope.\n"
+                              + "  Pushing to .github/workflows/ requires it.\n\n"
+                              + "Fix: regenerate your PAT at github.com/settings/tokens\n"
+                              + "with both 'repo' and 'workflow' scopes, then re-run Setup.\n\n"
+                              + "Vault repo: "
+                              + newConfig.githubRepo);
                     } else {
                       showError("Setup Failed", msg);
                     }
