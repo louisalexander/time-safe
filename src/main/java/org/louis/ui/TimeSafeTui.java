@@ -48,7 +48,7 @@ public class TimeSafeTui {
   private BasicWindow mainWindow;
   private Panel mainContentPanel;
 
-  /** Entry point: initialise screen and start the event loop. */
+  /** Entry point: initialize screen and start the event loop. */
   public void run() throws IOException {
     Terminal terminal = new DefaultTerminalFactory().createTerminal();
     Screen screen = new TerminalScreen(terminal);
@@ -82,43 +82,7 @@ public class TimeSafeTui {
   // ── Main window ────────────────────────────────────────────────────────────
 
   private void buildMainWindow() {
-    Panel root = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.VERTICAL));
-
-    // Header
-    Label header = new Label("  TimeSafe for Secrets  ");
-    header.setForegroundColor(TextColor.ANSI.CYAN);
-    root.addComponent(header);
-    root.addComponent(new Label(""));
-
-    mainContentPanel = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.VERTICAL));
-    root.addComponent(mainContentPanel);
-
-    root.addComponent(new Label(""));
-
-    // Bottom button row
-    Panel buttons = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.HORIZONTAL));
-    if (vaultManager != null) {
-      buttons.addComponent(
-          new Button(
-              "Add Secret",
-              () -> {
-                showAddSecretDialog();
-                rebuildSecretsList();
-              }));
-      buttons.addComponent(new Label("  "));
-    }
-    buttons.addComponent(new Button("Setup", this::showSetupDialog));
-    buttons.addComponent(new Label("  "));
-    buttons.addComponent(
-        new Button(
-            "Quit",
-            () -> {
-              mainWindow.close();
-            }));
-    root.addComponent(buttons);
-
-    rebuildSecretsList();
-    mainWindow.setComponent(root);
+    mainWindow.setComponent(buildMainWindowPanel());
   }
 
   private void rebuildSecretsList() {
@@ -165,10 +129,10 @@ public class TimeSafeTui {
     statusRow.addComponent(new Label("Status: "));
     Label statusLabel;
     if (ready) {
-      statusLabel = new Label("🔓 READY TO DECRYPT");
+      statusLabel = new Label("[READY]  READY TO DECRYPT");
       statusLabel.setForegroundColor(TextColor.ANSI.GREEN);
     } else {
-      statusLabel = new Label("🔒 Locked");
+      statusLabel = new Label("[LOCKED] Locked");
       statusLabel.setForegroundColor(TextColor.ANSI.RED);
     }
     statusRow.addComponent(statusLabel);
@@ -317,7 +281,21 @@ public class TimeSafeTui {
                   "Encrypting and pushing to GitHub...",
                   () -> vaultManager.putSecret(finalDays, secretText, name),
                   () -> showInfo("Secret Locked", "Secret locked until " + dateStr + "."),
-                  ex -> showError("Error", ex.getMessage()));
+                  ex -> {
+                    String msg = ex.getMessage() != null ? ex.getMessage() : ex.toString();
+                    if (msg.contains("404")) {
+                      showError(
+                          "Vault Not Found",
+                          "GitHub returned 404. Check that your vault repo exists\n"
+                              + "and your PAT has access to it.\n\n"
+                              + "Repo setting: "
+                              + (config != null ? config.githubRepo : "unknown")
+                              + "\n\n"
+                              + "You can re-run Setup to update your credentials.");
+                    } else {
+                      showError("Failed to Lock Secret", msg);
+                    }
+                  });
             }));
     btns.addComponent(new Label("  "));
     btns.addComponent(new Button("Cancel", dlg::close));
@@ -438,7 +416,7 @@ public class TimeSafeTui {
     Panel btns = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.HORIZONTAL));
     btns.addComponent(
         new Button(
-            "Save & Initialise",
+            "Save & Initialize",
             () -> {
               String pat = patBox.getText().trim();
               String repo = repoBox.getText().trim();
@@ -464,7 +442,7 @@ public class TimeSafeTui {
 
               dlg.close();
               runWithLoading(
-                  "Initialising vault on GitHub...",
+                  "Initializing vault on GitHub...",
                   () -> {
                     newConfig.save(Config.DEFAULT_PATH);
                     new GitHubVault(newConfig).initRepo();
@@ -475,9 +453,23 @@ public class TimeSafeTui {
                     // Rebuild the main window from scratch so Add Secret button appears
                     mainWindow.setComponent(buildMainWindowPanel());
                     rebuildSecretsList();
-                    showInfo("Setup Complete", "Vault initialised successfully.");
+                    showInfo("Setup Complete", "Vault initialized successfully.");
                   },
-                  ex -> showError("Setup Failed", ex.getMessage()));
+                  ex -> {
+                    String msg = ex.getMessage() != null ? ex.getMessage() : ex.toString();
+                    if (msg.contains("404")) {
+                      showError(
+                          "Vault Not Found",
+                          "GitHub returned 404. Check that your vault repo exists\n"
+                              + "and your PAT has access to it.\n\n"
+                              + "Repo setting: "
+                              + newConfig.githubRepo
+                              + "\n\n"
+                              + "You can re-run Setup to update your credentials.");
+                    } else {
+                      showError("Setup Failed", msg);
+                    }
+                  });
             }));
     btns.addComponent(new Label("  "));
     btns.addComponent(new Button("Cancel", dlg::close));
@@ -497,7 +489,8 @@ public class TimeSafeTui {
     loadingWin.setComponent(Panels.vertical(new Label(message), new Label("Please wait...")));
     gui.addWindow(loadingWin);
 
-    new Thread(
+    Thread worker =
+        new Thread(
             () -> {
               try {
                 action.run();
@@ -515,8 +508,12 @@ public class TimeSafeTui {
                           onError.accept(e);
                         });
               }
-            })
-        .start();
+            });
+    worker.setUncaughtExceptionHandler(
+        (t, ex) -> {
+          /* swallow — already handled above */
+        });
+    worker.start();
   }
 
   // ── Error / info helpers ──────────────────────────────────────────────────
@@ -535,6 +532,9 @@ public class TimeSafeTui {
     java.time.ZonedDateTime zdt = decryptionDate.atZone(ZoneId.systemDefault());
     long days = ChronoUnit.DAYS.between(Instant.now(), decryptionDate);
     DateTimeFormatter fmt = DateTimeFormatter.ofPattern("MMM d, yyyy");
+    if (days <= 0 && Instant.now().isBefore(decryptionDate)) {
+      return fmt.format(zdt) + "  (< 1 day remaining)";
+    }
     if (days <= 0) return "Unlocked on " + fmt.format(zdt);
     return fmt.format(zdt) + "  (" + days + " day" + (days == 1 ? "" : "s") + " remaining)";
   }
@@ -547,30 +547,33 @@ public class TimeSafeTui {
     if (name.length() > 22) name = name.substring(0, 20) + "..";
     String padded = String.format("%-24s", name);
     if (s.availableForDecryption()) {
-      return "  🔓  " + padded + "  READY TO DECRYPT";
+      return "  [READY]   " + padded + "  READY TO DECRYPT";
     } else {
       String date =
           DateTimeFormatter.ofPattern("MMM d yyyy")
               .format(s.getDecryptionDate().atZone(ZoneId.systemDefault()));
-      return "  🔒  " + padded + "  " + days + " days  (" + date + ")";
+      String daysStr = days == 0 ? "< 1 day" : days + (days == 1 ? " day " : " days");
+      return "  [LOCKED]  " + padded + "  " + daysStr + "  (" + date + ")";
     }
   }
 
   // ── Helper: build main window panel (for post-setup rebuild) ─────────────
 
   private Panel buildMainWindowPanel() {
-    Panel root = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.VERTICAL));
+    Panel root = new Panel(new com.googlecode.lanterna.gui2.BorderLayout());
 
-    Label header = new Label("  TimeSafe for Secrets  ");
-    header.setForegroundColor(TextColor.ANSI.CYAN);
-    root.addComponent(header);
-    root.addComponent(new Label(""));
+    // TOP: header
+    Panel header = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.HORIZONTAL));
+    Label title = new Label(" TimeSafe for Secrets ");
+    title.setForegroundColor(TextColor.ANSI.CYAN);
+    header.addComponent(title);
+    root.addComponent(header, com.googlecode.lanterna.gui2.BorderLayout.Location.TOP);
 
+    // CENTER: content (secrets list or message) — will fill available space
     mainContentPanel = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.VERTICAL));
-    root.addComponent(mainContentPanel);
+    root.addComponent(mainContentPanel, com.googlecode.lanterna.gui2.BorderLayout.Location.CENTER);
 
-    root.addComponent(new Label(""));
-
+    // BOTTOM: action buttons
     Panel buttons = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.HORIZONTAL));
     if (vaultManager != null) {
       buttons.addComponent(
@@ -580,13 +583,14 @@ public class TimeSafeTui {
                 showAddSecretDialog();
                 rebuildSecretsList();
               }));
-      buttons.addComponent(new Label("  "));
+      buttons.addComponent(new Label("   "));
     }
     buttons.addComponent(new Button("Setup", this::showSetupDialog));
-    buttons.addComponent(new Label("  "));
+    buttons.addComponent(new Label("   "));
     buttons.addComponent(new Button("Quit", mainWindow::close));
-    root.addComponent(buttons);
+    root.addComponent(buttons, com.googlecode.lanterna.gui2.BorderLayout.Location.BOTTOM);
 
+    rebuildSecretsList();
     return root;
   }
 }
