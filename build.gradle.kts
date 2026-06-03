@@ -32,7 +32,7 @@ dependencies {
     implementation("net.java.dev.jna:jna:5.14.0")
     implementation("com.googlecode.lanterna:lanterna:3.1.2")
     testImplementation("junit:junit:4.13.2")
-    spotbugsPlugins("com.h3xstream.findsecbugs:findsecbugs-plugin:1.13.0")
+    spotbugsPlugins("com.h3xstream.findsecbugs:findsecbugs-plugin:1.14.0")
 }
 
 spotless {
