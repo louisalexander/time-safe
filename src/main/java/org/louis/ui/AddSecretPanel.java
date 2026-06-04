@@ -1,5 +1,6 @@
 package org.louis.ui;
 
+import com.googlecode.lanterna.gui2.Button;
 import com.googlecode.lanterna.gui2.Direction;
 import com.googlecode.lanterna.gui2.Label;
 import com.googlecode.lanterna.gui2.LinearLayout;
@@ -110,30 +111,12 @@ public class AddSecretPanel {
             Label errorLine3 = new Label("");
             errorLine3.setForegroundColor(UiColors.RED);
 
-            Panel step3Panel = new Panel(new LinearLayout(Direction.VERTICAL));
-            step3Panel.addComponent(UiComponents.breadcrumb("Secrets"));
-            step3Panel.addComponent(UiComponents.spacer());
-            step3Panel.addComponent(UiComponents.dimLabel("Add secret — step 3 of 3"));
-            step3Panel.addComponent(UiComponents.spacer());
-            step3Panel.addComponent(UiComponents.dimLabel("Secret text"));
-            step3Panel.addComponent(secretBox);
-            step3Panel.addComponent(UiComponents.dimLabel("This will be encrypted."));
-            step3Panel.addComponent(errorLine3);
-            step3Panel.addComponent(UiComponents.spacer());
-            step3Panel.addComponent(UiComponents.dimLabel("Ctrl+Enter save   Esc back"));
-
-            WindowListenerAdapter step3Listener =
-                new WindowListenerAdapter() {
-                  @Override
-                  public void onUnhandledInput(Window w, KeyStroke k, AtomicBoolean consumed) {
-                    if (k.getKeyType() == KeyType.Escape) {
-                      consumed.set(true);
-                      nav.pop();
-                      return;
-                    }
-                    // Ctrl+Enter
-                    if (k.isCtrlDown() && k.getKeyType() == KeyType.Enter) {
-                      consumed.set(true);
+            // Save button: Tab focuses it, Enter activates. Avoids Ctrl+Enter which doesn't
+            // pass through macOS Terminal by default.
+            Button saveButton =
+                new Button(
+                    "Save",
+                    () -> {
                       String text = secretBox.getText().trim();
                       if (text.isEmpty()) {
                         errorLine3.setText("Secret text must not be empty.");
@@ -152,6 +135,29 @@ public class AddSecretPanel {
                                 false);
                           },
                           ex -> errorLine3.setText("✗ " + ex.getMessage()));
+                    });
+
+            Panel step3Panel = new Panel(new LinearLayout(Direction.VERTICAL));
+            step3Panel.addComponent(UiComponents.breadcrumb("Secrets"));
+            step3Panel.addComponent(UiComponents.spacer());
+            step3Panel.addComponent(UiComponents.dimLabel("Add secret — step 3 of 3"));
+            step3Panel.addComponent(UiComponents.spacer());
+            step3Panel.addComponent(UiComponents.dimLabel("Secret text"));
+            step3Panel.addComponent(secretBox);
+            step3Panel.addComponent(UiComponents.dimLabel("This will be encrypted."));
+            step3Panel.addComponent(errorLine3);
+            step3Panel.addComponent(UiComponents.spacer());
+            step3Panel.addComponent(saveButton);
+            step3Panel.addComponent(UiComponents.spacer());
+            step3Panel.addComponent(UiComponents.dimLabel("Tab to Save   Esc back"));
+
+            WindowListenerAdapter step3Listener =
+                new WindowListenerAdapter() {
+                  @Override
+                  public void onUnhandledInput(Window w, KeyStroke k, AtomicBoolean consumed) {
+                    if (k.getKeyType() == KeyType.Escape) {
+                      consumed.set(true);
+                      nav.pop();
                     }
                   }
                 };
