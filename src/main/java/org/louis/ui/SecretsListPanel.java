@@ -151,26 +151,26 @@ public class SecretsListPanel {
         int cols = size.getColumns();
         int selectedIdx = component.getSelectedIndex();
 
+        // Clear the whole area with the terminal default — no background fills.
+        graphics.setBackgroundColor(TextColor.ANSI.DEFAULT);
+        graphics.fill(' ');
+
         for (int row = 0; row < Math.min(secrets.size(), size.getRows()); row++) {
           Secret s = secrets.get(row);
           boolean selected = row == selectedIdx;
 
-          // Row background — explicit colors, no ANSI.DEFAULT
-          graphics.setBackgroundColor(selected ? UiColors.BG_SELECTED : UiColors.BG);
-          graphics.fillRectangle(new TerminalPosition(0, row), new TerminalSize(cols, 1), ' ');
-
-          // Cursor prefix "›  " or "   "
+          // Cursor prefix "›  " for selected, "   " otherwise.
           graphics.setForegroundColor(UiColors.BLUE);
           graphics.putString(0, row, selected ? "›  " : "   ");
 
-          // Name column (24 chars after prefix)
+          // Name column.
           String name = s.getName();
           if (name.length() > 22) name = name.substring(0, 20) + "..";
           String paddedName = String.format("%-24s", name);
           graphics.setForegroundColor(selected ? UiColors.BRIGHT : UiColors.DIM);
           graphics.putString(3, row, paddedName);
 
-          // Status column — right-aligned, never overlaps name
+          // Status column — right-aligned, never overlaps name.
           String statusText;
           TextColor statusColor;
           if (s.availableForDecryption()) {
@@ -181,8 +181,7 @@ public class SecretsListPanel {
             statusText = formatTimeRemaining(s.getDecryptionDate());
             statusColor = secs < 86400L ? UiColors.ORANGE : UiColors.DIM;
           }
-          int minStatusCol = 28;
-          int statusCol = Math.max(minStatusCol, cols - statusText.length() - 2);
+          int statusCol = Math.max(28, cols - statusText.length() - 2);
           graphics.setForegroundColor(statusColor);
           graphics.putString(statusCol, row, statusText);
         }
