@@ -148,32 +148,29 @@ public class SecretsListPanel {
       @Override
       public void drawComponent(TextGUIGraphics graphics, ActionListBox component) {
         TerminalSize size = component.getSize();
+        int cols = size.getColumns();
         int selectedIdx = component.getSelectedIndex();
-        boolean focused = component.isFocused();
 
         for (int row = 0; row < Math.min(secrets.size(), size.getRows()); row++) {
           Secret s = secrets.get(row);
           boolean selected = row == selectedIdx;
 
-          // Row background
-          if (selected) {
-            graphics.setBackgroundColor(
-                focused ? new TextColor.RGB(25, 35, 65) : new TextColor.RGB(30, 30, 30));
-          } else {
-            graphics.setBackgroundColor(TextColor.ANSI.DEFAULT);
-          }
+          // Row background — explicit colors, no ANSI.DEFAULT
+          graphics.setBackgroundColor(selected ? UiColors.BG_SELECTED : UiColors.BG);
+          graphics.fillRectangle(new TerminalPosition(0, row), new TerminalSize(cols, 1), ' ');
 
-          // Blank the row
-          graphics.drawLine(0, row, size.getColumns() - 1, row, ' ');
+          // Cursor prefix "›  " or "   "
+          graphics.setForegroundColor(UiColors.BLUE);
+          graphics.putString(0, row, selected ? "›  " : "   ");
 
-          // Name column (28 chars)
+          // Name column (24 chars after prefix)
           String name = s.getName();
-          if (name.length() > 26) name = name.substring(0, 24) + "..";
-          String paddedName = String.format("%-28s", name);
-          graphics.setForegroundColor(selected ? UiColors.BRIGHT : TextColor.ANSI.WHITE);
-          graphics.putString(0, row, paddedName);
+          if (name.length() > 22) name = name.substring(0, 20) + "..";
+          String paddedName = String.format("%-24s", name);
+          graphics.setForegroundColor(selected ? UiColors.BRIGHT : UiColors.DIM);
+          graphics.putString(3, row, paddedName);
 
-          // Status column
+          // Status column — right-aligned, never overlaps name
           String statusText;
           TextColor statusColor;
           if (s.availableForDecryption()) {
@@ -184,20 +181,27 @@ public class SecretsListPanel {
             statusText = formatTimeRemaining(s.getDecryptionDate());
             statusColor = secs < 86400L ? UiColors.ORANGE : UiColors.DIM;
           }
+          int minStatusCol = 28;
+          int statusCol = Math.max(minStatusCol, cols - statusText.length() - 2);
           graphics.setForegroundColor(statusColor);
-          int statusCol = Math.min(30, Math.max(0, size.getColumns() - statusText.length() - 2));
           graphics.putString(statusCol, row, statusText);
-
-          // Reset
-          graphics.setBackgroundColor(TextColor.ANSI.DEFAULT);
-          graphics.setForegroundColor(TextColor.ANSI.DEFAULT);
         }
       }
     };
   }
 
-  private static String formatTimeRemaining(Instant decryptionDate) {
-    long total = ChronoUnit.SECONDS.between(Instant.now(), decryptionDate);
+  /**
+   * Format the time remaining until {@code decryptionDate}. Package-private for testing. Returns "●
+   * ready" when no time remains; otherwise the largest two units (days+hours, hours+minutes,
+   * minutes+seconds, or just seconds).
+   */
+  static String formatTimeRemaining(Instant decryptionDate) {
+    return formatTimeRemaining(Instant.now(), decryptionDate);
+  }
+
+  /** Same as {@link #formatTimeRemaining(Instant)} but with an injectable "now" for tests. */
+  static String formatTimeRemaining(Instant now, Instant decryptionDate) {
+    long total = ChronoUnit.SECONDS.between(now, decryptionDate);
     if (total <= 0) return "● ready";
     long days = total / 86400;
     long hours = (total % 86400) / 3600;
