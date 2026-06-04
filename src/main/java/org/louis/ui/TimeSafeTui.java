@@ -16,6 +16,7 @@ import com.googlecode.lanterna.gui2.WindowListenerAdapter;
 import com.googlecode.lanterna.gui2.dialogs.MessageDialog;
 import com.googlecode.lanterna.gui2.dialogs.MessageDialogButton;
 import com.googlecode.lanterna.input.KeyStroke;
+import com.googlecode.lanterna.input.KeyType;
 import com.googlecode.lanterna.screen.Screen;
 import com.googlecode.lanterna.screen.TerminalScreen;
 import com.googlecode.lanterna.terminal.DefaultTerminalFactory;
@@ -205,14 +206,14 @@ public class TimeSafeTui {
     Panel btns = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.HORIZONTAL));
     btns.addComponent(new Label("  "));
     if (ready) {
-      btns.addComponent(new Button("Decrypt", () -> showDecryptDialog(secret, detailWin)));
+      btns.addComponent(new Button("(D)ecrypt", () -> showDecryptDialog(secret, detailWin)));
       btns.addComponent(new Label("  "));
     }
-    btns.addComponent(new Button("Extend Lock", () -> showExtendLockDialog(secret, detailWin)));
+    btns.addComponent(new Button("(E)xtend Lock", () -> showExtendLockDialog(secret, detailWin)));
     btns.addComponent(new Label("  "));
-    btns.addComponent(new Button("Delete", () -> showDeleteConfirmation(secret, detailWin)));
+    btns.addComponent(new Button("(X) Delete", () -> showDeleteConfirmation(secret, detailWin)));
     btns.addComponent(new Label("  "));
-    btns.addComponent(new Button("Close", detailWin::close));
+    btns.addComponent(new Button("Close [Esc]", detailWin::close));
     btns.addComponent(new Label("  "));
     panel.addComponent(btns);
 
@@ -224,6 +225,39 @@ public class TimeSafeTui {
     detailWin.setComponent(
         panel.withBorder(
             com.googlecode.lanterna.gui2.Borders.singleLine(" " + secret.getName() + " ")));
+
+    detailWin.addWindowListener(
+        new WindowListenerAdapter() {
+          @Override
+          public void onUnhandledInput(
+              Window sourceWindow, KeyStroke keyStroke, AtomicBoolean consumed) {
+            if (keyStroke.getKeyType() == KeyType.Escape) {
+              consumed.set(true);
+              detailWin.close();
+              return;
+            }
+            if (keyStroke.getCharacter() == null) return;
+            switch (Character.toLowerCase(keyStroke.getCharacter())) {
+              case 'd':
+                if (ready) {
+                  consumed.set(true);
+                  showDecryptDialog(secret, detailWin);
+                }
+                break;
+              case 'e':
+                consumed.set(true);
+                showExtendLockDialog(secret, detailWin);
+                break;
+              case 'x':
+                consumed.set(true);
+                showDeleteConfirmation(secret, detailWin);
+                break;
+              default:
+                break;
+            }
+          }
+        });
+
     gui.addWindow(detailWin);
     gui.setActiveWindow(detailWin);
   }
@@ -276,6 +310,7 @@ public class TimeSafeTui {
     panel.addComponent(btns);
 
     dlg.setComponent(panel);
+    addEscapeToClose(dlg);
     gui.addWindow(dlg);
     gui.setActiveWindow(dlg);
   }
@@ -358,6 +393,7 @@ public class TimeSafeTui {
     panel.addComponent(btns);
 
     dlg.setComponent(panel);
+    addEscapeToClose(dlg);
     gui.addWindow(dlg);
     gui.setActiveWindow(dlg);
     // Wait for this dialog to close before returning so caller can rebuildSecretsList
@@ -408,6 +444,7 @@ public class TimeSafeTui {
     panel.addComponent(btns);
 
     dlg.setComponent(panel);
+    addEscapeToClose(dlg);
     gui.addWindow(dlg);
     gui.setActiveWindow(dlg);
   }
@@ -541,6 +578,7 @@ public class TimeSafeTui {
     panel.addComponent(btns);
 
     dlg.setComponent(panel);
+    addEscapeToClose(dlg);
     gui.addWindow(dlg);
     gui.setActiveWindow(dlg);
   }
@@ -579,6 +617,22 @@ public class TimeSafeTui {
           /* swallow — already handled above */
         });
     worker.start();
+  }
+
+  // ── Keyboard shortcut helpers ─────────────────────────────────────────────
+
+  private void addEscapeToClose(BasicWindow window) {
+    window.addWindowListener(
+        new WindowListenerAdapter() {
+          @Override
+          public void onUnhandledInput(
+              Window sourceWindow, KeyStroke keyStroke, AtomicBoolean consumed) {
+            if (keyStroke.getKeyType() == KeyType.Escape) {
+              consumed.set(true);
+              window.close();
+            }
+          }
+        });
   }
 
   // ── Error / info helpers ──────────────────────────────────────────────────
