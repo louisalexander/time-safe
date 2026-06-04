@@ -124,23 +124,28 @@ public class TimeSafeTui {
   // ── Secret detail window (Screen 2) ───────────────────────────────────────
 
   private void showSecretDetailWindow(Secret secret) {
-    BasicWindow detailWin = new BasicWindow(secret.getName());
-    detailWin.setHints(Set.of(Window.Hint.CENTERED));
+    BasicWindow detailWin = new BasicWindow();
+    detailWin.setHints(Set.of(Window.Hint.CENTERED, Window.Hint.NO_DECORATIONS));
 
     Panel panel = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.VERTICAL));
 
     boolean ready = secret.availableForDecryption();
 
+    // top padding row that also enforces a minimum dialog width
+    panel.addComponent(
+        new com.googlecode.lanterna.gui2.EmptySpace(
+            new com.googlecode.lanterna.TerminalSize(44, 1)));
+
     // Status row
     Panel statusRow =
         new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.HORIZONTAL));
-    statusRow.addComponent(new Label("Status: "));
+    statusRow.addComponent(new Label("  Status:   "));
     Label statusLabel;
     if (ready) {
-      statusLabel = new Label("✓  READY TO DECRYPT");
+      statusLabel = new Label("✓  READY TO DECRYPT              ");
       statusLabel.setForegroundColor(TextColor.ANSI.GREEN);
     } else {
-      statusLabel = new Label("✗  Locked");
+      statusLabel = new Label("✗  Locked                        ");
       statusLabel.setForegroundColor(TextColor.ANSI.RED);
     }
     statusRow.addComponent(statusLabel);
@@ -149,22 +154,26 @@ public class TimeSafeTui {
     // Unlock date row
     Panel unlockRow =
         new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.HORIZONTAL));
-    unlockRow.addComponent(new Label("Unlocks: "));
-    unlockRow.addComponent(new Label(formatUnlockDate(secret.getDecryptionDate())));
+    unlockRow.addComponent(new Label("  Unlocks:  "));
+    unlockRow.addComponent(new Label(formatUnlockDate(secret.getDecryptionDate()) + "  "));
     panel.addComponent(unlockRow);
 
     // ID row
     Panel idRow = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.HORIZONTAL));
-    idRow.addComponent(new Label("ID:      "));
+    idRow.addComponent(new Label("  ID:        "));
     String shortId =
         secret.getId().length() > 8 ? secret.getId().substring(0, 8) + "..." : secret.getId();
-    idRow.addComponent(new Label(shortId));
+    idRow.addComponent(new Label(shortId + "  "));
     panel.addComponent(idRow);
 
-    panel.addComponent(new Label(""));
+    // spacer
+    panel.addComponent(
+        new com.googlecode.lanterna.gui2.EmptySpace(
+            new com.googlecode.lanterna.TerminalSize(1, 1)));
 
     // Buttons
     Panel btns = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.HORIZONTAL));
+    btns.addComponent(new Label("  "));
     if (ready) {
       btns.addComponent(new Button("Decrypt", () -> showDecryptDialog(secret, detailWin)));
       btns.addComponent(new Label("  "));
@@ -174,9 +183,17 @@ public class TimeSafeTui {
     btns.addComponent(new Button("Delete", () -> showDeleteConfirmation(secret, detailWin)));
     btns.addComponent(new Label("  "));
     btns.addComponent(new Button("Close", detailWin::close));
+    btns.addComponent(new Label("  "));
     panel.addComponent(btns);
 
-    detailWin.setComponent(panel);
+    // bottom padding
+    panel.addComponent(
+        new com.googlecode.lanterna.gui2.EmptySpace(
+            new com.googlecode.lanterna.TerminalSize(1, 1)));
+
+    detailWin.setComponent(
+        panel.withBorder(
+            com.googlecode.lanterna.gui2.Borders.singleLine(" " + secret.getName() + " ")));
     gui.addWindow(detailWin);
     gui.setActiveWindow(detailWin);
   }
