@@ -39,9 +39,8 @@ public class SecretDetailPanel {
       statusLabel.setForegroundColor(UiColors.GREEN);
       panel.addComponent(statusLabel);
     } else {
-      Label statusLabel = new Label("locked — " + formatCountdown());
-      statusLabel.setForegroundColor(UiColors.DIM);
-      panel.addComponent(statusLabel);
+      // Locked status renders at terminal default — no dimming.
+      panel.addComponent(new Label("locked — " + formatCountdown()));
     }
 
     panel.addComponent(UiComponents.spacer());
@@ -59,10 +58,11 @@ public class SecretDetailPanel {
     panel.addComponent(UiComponents.divider(40));
     panel.addComponent(UiComponents.spacer());
 
-    // Action hints
-    panel.addComponent(actionRow("d", "Decrypt", !secret.availableForDecryption()));
-    panel.addComponent(actionRow("e", "Extend lock", false));
-    panel.addComponent(actionRow("x", "Delete", false));
+    // Action hints. 'd' is shown unconditionally — pressing it on a locked secret surfaces an
+    // inline error, which is the disabled-state feedback.
+    panel.addComponent(actionRow("d", "Decrypt"));
+    panel.addComponent(actionRow("e", "Extend lock"));
+    panel.addComponent(actionRow("x", "Delete"));
 
     // Inline error label (hidden initially)
     errorLine = new Label("");
@@ -74,14 +74,12 @@ public class SecretDetailPanel {
     return panel;
   }
 
-  private Panel actionRow(String key, String label, boolean disabled) {
+  private Panel actionRow(String key, String label) {
     Panel row = new Panel(new LinearLayout(Direction.HORIZONTAL));
     Label keyLabel = new Label(key + "  ");
-    keyLabel.setForegroundColor(disabled ? UiColors.DIM : UiColors.BLUE);
+    keyLabel.setForegroundColor(UiColors.BLUE);
     Label actionLabel = new Label(label);
-    if (disabled) {
-      actionLabel.setForegroundColor(UiColors.DIM);
-    } else if ("x".equals(key)) {
+    if ("x".equals(key)) {
       actionLabel.setForegroundColor(UiColors.RED);
     }
     row.addComponent(keyLabel);

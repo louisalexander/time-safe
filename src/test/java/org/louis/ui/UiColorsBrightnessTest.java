@@ -7,23 +7,15 @@ import org.junit.Test;
 
 /**
  * Locks in a minimum brightness for foreground colors so the UI doesn't regress to a "faded" look
- * on non-black terminal backgrounds. {@link UiColors#DIM} previously used {@code
- * TextColor.ANSI.WHITE} (≈ #C0C0C0 on most terminals but invisible on light themes) and later
- * {@code RGB(140,140,140)} which read as washed-out on tinted backgrounds. The minimums here come
- * from in-vivo testing against macOS Terminal's default and a blue-tinted theme.
+ * on non-black terminal backgrounds. The minimums come from in-vivo testing against macOS
+ * Terminal's default and a blue-tinted theme.
  */
 public class UiColorsBrightnessTest {
 
-  private static final int DIM_MIN_BRIGHTNESS = 180;
   private static final int BRIGHT_MIN_BRIGHTNESS = 240;
   // Perceived brightness uses luminance weights — blue channel only contributes 0.114, so even a
   // saturated mid-blue lands around 130. The spec's RGB(92,124,250) measures ~129.
   private static final int BLUE_MIN_BRIGHTNESS = 120;
-
-  @Test
-  public void dimIsBrightEnough() {
-    assertAverageChannelAtLeast("DIM", UiColors.DIM, DIM_MIN_BRIGHTNESS);
-  }
 
   @Test
   public void brightIsBrightEnough() {
@@ -36,14 +28,6 @@ public class UiColorsBrightnessTest {
     assertTrue(
         "BLUE perceived brightness must be ≥ " + BLUE_MIN_BRIGHTNESS + ", was " + b,
         b >= BLUE_MIN_BRIGHTNESS);
-  }
-
-  @Test
-  public void brightIsBrighterThanDim() {
-    int b = perceivedBrightness(UiColors.BRIGHT);
-    int d = perceivedBrightness(UiColors.DIM);
-    assertTrue(
-        "BRIGHT (" + b + ") must out-brighten DIM (" + d + ") so the selection is visible", b > d);
   }
 
   // ── helpers ──────────────────────────────────────────────────────────────────

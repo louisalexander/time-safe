@@ -2,7 +2,7 @@ package org.louis.ui;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNotSame;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import com.googlecode.lanterna.gui2.Label;
@@ -25,16 +25,15 @@ public class UiComponentsTest {
   public void sectionLabelDoesNotOverrideForeground() {
     Label l = UiComponents.sectionLabel("Secrets — repo");
     assertEquals("Secrets — repo", l.getText());
-    // DIM is reserved for unselected list rows and low-urgency countdowns.
-    // The section label renders at the terminal's default foreground (normal opacity).
-    assertNotSame(UiColors.DIM, l.getForegroundColor());
+    // No dimming anywhere — section label renders at terminal default.
+    assertNull(l.getForegroundColor());
   }
 
   @Test
   public void dimLabelDoesNotOverrideForeground() {
     // dimLabel kept the old API name but no longer dims. Renders at terminal default.
     Label l = UiComponents.dimLabel("Hint text");
-    assertNotSame(UiColors.DIM, l.getForegroundColor());
+    assertNull(l.getForegroundColor());
   }
 
   @Test
@@ -101,12 +100,12 @@ public class UiComponentsTest {
     assertEquals("a", labels.get(0).getText());
     assertEquals(UiColors.BLUE, labels.get(0).getForegroundColor());
     assertTrue(labels.get(1).getText().contains("add"));
-    // Descriptions render at terminal default — no DIM override.
-    assertNotSame(UiColors.DIM, labels.get(1).getForegroundColor());
+    // Descriptions render at terminal default — no foreground override at all.
+    assertNull(labels.get(1).getForegroundColor());
     assertEquals("q", labels.get(2).getText());
     assertEquals(UiColors.BLUE, labels.get(2).getForegroundColor());
     assertTrue(labels.get(3).getText().contains("quit"));
-    assertNotSame(UiColors.DIM, labels.get(3).getForegroundColor());
+    assertNull(labels.get(3).getForegroundColor());
   }
 
   @Test(expected = IllegalArgumentException.class)

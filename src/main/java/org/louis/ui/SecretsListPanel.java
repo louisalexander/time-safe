@@ -164,14 +164,15 @@ public class SecretsListPanel {
           graphics.setForegroundColor(UiColors.BLUE);
           graphics.putString(0, row, selected ? "›  " : "   ");
 
-          // Name column.
+          // Name column. Selected row uses BRIGHT; unselected uses the terminal default.
           String name = s.getName();
           if (name.length() > 22) name = name.substring(0, 20) + "..";
           String paddedName = String.format("%-24s", name);
-          graphics.setForegroundColor(selected ? UiColors.BRIGHT : UiColors.DIM);
+          graphics.setForegroundColor(selected ? UiColors.BRIGHT : TextColor.ANSI.DEFAULT);
           graphics.putString(3, row, paddedName);
 
           // Status column — right-aligned, never overlaps name.
+          // Color is semantic: GREEN ready, ORANGE urgency (<24h), terminal default otherwise.
           String statusText;
           TextColor statusColor;
           if (s.availableForDecryption()) {
@@ -180,7 +181,7 @@ public class SecretsListPanel {
           } else {
             long secs = ChronoUnit.SECONDS.between(Instant.now(), s.getDecryptionDate());
             statusText = formatTimeRemaining(s.getDecryptionDate());
-            statusColor = secs < 86400L ? UiColors.ORANGE : UiColors.DIM;
+            statusColor = secs < 86400L ? UiColors.ORANGE : TextColor.ANSI.DEFAULT;
           }
           int statusCol = Math.max(28, cols - statusText.length() - 2);
           graphics.setForegroundColor(statusColor);
