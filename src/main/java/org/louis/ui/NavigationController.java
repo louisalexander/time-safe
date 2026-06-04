@@ -47,6 +47,13 @@ public interface NavigationController {
       Runnable onSuccess,
       Consumer<Exception> onError);
 
+  /** Run a background action that produces a value, then call onSuccess or onError on GUI thread. */
+  <T> void runAsync(
+      String loadingMessage,
+      ThrowingSupplier<T> action,
+      java.util.function.Consumer<T> onSuccess,
+      java.util.function.Consumer<Exception> onError);
+
   /**
    * Show a transient status message on the secrets list (green or red).
    * Call after popToRoot() so the message appears on the refreshed list.
@@ -56,5 +63,10 @@ public interface NavigationController {
   @FunctionalInterface
   interface ThrowingRunnable {
     void run() throws Exception;
+  }
+
+  @FunctionalInterface
+  interface ThrowingSupplier<T> {
+    T get() throws Exception;
   }
 }
