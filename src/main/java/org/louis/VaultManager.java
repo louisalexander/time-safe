@@ -23,6 +23,7 @@ public class VaultManager {
   }
 
   public void putSecret(int daysUntilDecryption, String secretText, String name) throws Exception {
+    Log.info("Storing secret: " + name + " (lock for " + daysUntilDecryption + " days)");
     byte[] key = EncryptDecrypt.generateKey();
     byte[] iv = EncryptDecrypt.generateIV();
     byte[] enc = EncryptDecrypt.encrypt(secretText, key, iv);
@@ -48,9 +49,11 @@ public class VaultManager {
         ".github/workflows/unlock-" + secret.getId() + ".yml",
         github.buildWorkflowYaml(secret).getBytes(StandardCharsets.UTF_8),
         "lock: add unlock workflow for " + name);
+    Log.info("Secret stored: " + name + " (id=" + secret.getId() + ", unlocks=" + unlockDate + ")");
   }
 
   public void updateSecret(Secret secret, int additionalDays, String vaultDir) throws Exception {
+    Log.info("Extending lock: " + secret.getName() + " by " + additionalDays + " days");
     Instant start = secret.availableForDecryption() ? Instant.now() : secret.getDecryptionDate();
     Instant newDate = start.plus(additionalDays, ChronoUnit.DAYS);
     secret.setDecryptionDate(newDate);
@@ -64,26 +67,33 @@ public class VaultManager {
         ".github/workflows/unlock-" + secret.getId() + ".yml",
         github.buildWorkflowYaml(secret).getBytes(StandardCharsets.UTF_8),
         "extend: update workflow for " + secret.getName());
+    Log.info("Lock extended: " + secret.getName() + " now unlocks " + newDate);
   }
 
   public Collection<Secret> getSecrets() {
     try {
       return Secret.list(VAULT_DIR);
     } catch (IOException e) {
+      Log.error("Failed to list secrets from " + VAULT_DIR, e);
       return Collections.emptyList();
     }
   }
 
   public String decrypt(Secret secret, byte[] key) {
+    Log.info("Decrypting: " + secret.getName());
     try {
       byte[] enc = Secret.loadEncrypted(VAULT_DIR, secret.getId());
-      return EncryptDecrypt.decrypt(enc, key, secret.getIv());
+      String result = EncryptDecrypt.decrypt(enc, key, secret.getIv());
+      Log.info("Decrypted successfully: " + secret.getName());
+      return result;
     } catch (Exception e) {
+      Log.error("Decryption failed: " + secret.getName(), e);
       return "Decryption failed: " + e.getMessage();
     }
   }
 
   public void delete(Secret secret) throws Exception {
+    Log.info("Deleting secret: " + secret.getName() + " (id=" + secret.getId() + ")");
     FileUtils.deleteQuietly(new File(VAULT_DIR, secret.getId() + ".meta"));
     FileUtils.deleteQuietly(new File(VAULT_DIR, secret.getId() + ".enc"));
     github.deleteFile("vault/secrets/" + secret.getId() + ".enc", "delete: " + secret.getName());
@@ -93,6 +103,7 @@ public class VaultManager {
     github.deleteFile(
         ".github/workflows/unlock-" + secret.getId() + ".yml",
         "delete: workflow for " + secret.getName());
+    Log.info("Deleted secret: " + secret.getName());
   }
 
   private byte[] readLocal(String path) throws IOException {

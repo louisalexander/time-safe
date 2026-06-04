@@ -78,7 +78,9 @@ public class TimeSafeTui {
     try {
       config = Config.load();
       vaultManager = new VaultManager(config);
+      org.louis.Log.info("Config loaded: " + config.githubRepo);
     } catch (IOException e) {
+      org.louis.Log.warn("No config found — running unconfigured");
       config = null;
       vaultManager = null;
     }
@@ -757,6 +759,7 @@ public class TimeSafeTui {
   // ── Error / info helpers ──────────────────────────────────────────────────
 
   private void showError(String title, String message) {
+    org.louis.Log.error(title + ": " + message);
     MessageDialog.showMessageDialog(gui, title, message, MessageDialogButton.OK);
   }
 

@@ -29,6 +29,7 @@ public class GitHubVault {
   // ── Public API ───────────────────────────────────────────────────────────
 
   public void pushFile(String path, byte[] content, String message) throws IOException {
+    Log.info("GitHub push: " + path);
     String sha = getFileSha(path);
     JsonObject body = new JsonObject();
     body.addProperty("message", message);
@@ -50,6 +51,7 @@ public class GitHubVault {
   }
 
   public void deleteFile(String path, String message) throws IOException {
+    Log.info("GitHub delete: " + path);
     String sha = getFileSha(path);
     if (sha == null) return;
     JsonObject body = new JsonObject();
@@ -59,10 +61,12 @@ public class GitHubVault {
   }
 
   public void initRepo() throws IOException {
+    Log.info("Initializing vault repo: " + config.githubRepo);
     pushFile("vault/keys/.gitkeep", new byte[0], "chore: initialize vault structure");
     pushFile("vault/scripts/send_key.py", getSendKeyScript(), "chore: add key delivery script");
     setRepoSecret("SMTP_USER", config.smtpUser);
     setRepoSecret("SMTP_PASS", config.smtpPass);
+    Log.info("Vault repo initialized: " + config.githubRepo);
   }
 
   public String buildWorkflowYaml(Secret secret) {
@@ -197,8 +201,11 @@ public class GitHubVault {
 
     try {
       HttpResponse<String> response = http.send(req, HttpResponse.BodyHandlers.ofString());
-      if (response.statusCode() >= 400)
-        throw new IOException("GitHub API " + response.statusCode() + ": " + response.body());
+      if (response.statusCode() >= 400) {
+        String err = "GitHub API " + response.statusCode() + " " + method + " " + endpoint;
+        Log.error(err);
+        throw new IOException(err + ": " + response.body());
+      }
       return response.body();
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
