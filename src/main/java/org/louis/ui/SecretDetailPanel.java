@@ -34,14 +34,15 @@ public class SecretDetailPanel {
 
     // Name + status
     panel.addComponent(UiComponents.brightLabel(secret.getName()));
+    Label statusLabel;
     if (secret.availableForDecryption()) {
-      Label statusLabel = new Label("● ready to decrypt");
+      statusLabel = new Label("● ready to decrypt");
       statusLabel.setForegroundColor(UiColors.GREEN);
-      panel.addComponent(statusLabel);
     } else {
-      // Locked status renders at terminal default — no dimming.
-      panel.addComponent(new Label("locked — " + formatCountdown()));
+      statusLabel = new Label("locked — " + formatCountdown());
+      statusLabel.setForegroundColor(UiColors.DIM);
     }
+    panel.addComponent(statusLabel);
 
     panel.addComponent(UiComponents.spacer());
 

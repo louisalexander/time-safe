@@ -21,18 +21,16 @@ public class UiComponentsTest {
   }
 
   @Test
-  public void sectionLabelRendersBright() {
+  public void sectionLabelRendersDim() {
     Label l = UiComponents.sectionLabel("Secrets — repo");
     assertEquals("Secrets — repo", l.getText());
-    // No dimming anywhere — section label renders BRIGHT, not muted-terminal-default.
-    assertEquals(UiColors.BRIGHT, l.getForegroundColor());
+    assertEquals(UiColors.DIM, l.getForegroundColor());
   }
 
   @Test
-  public void dimLabelRendersBright() {
-    // dimLabel kept the old API name but no longer dims. Renders BRIGHT.
+  public void dimLabelRendersDim() {
     Label l = UiComponents.dimLabel("Hint text");
-    assertEquals(UiColors.BRIGHT, l.getForegroundColor());
+    assertEquals(UiColors.DIM, l.getForegroundColor());
   }
 
   @Test
@@ -89,7 +87,7 @@ public class UiComponentsTest {
   }
 
   @Test
-  public void hintBarKeysAreBlueDescriptionsAreBright() {
+  public void hintBarKeysAreBlueDescriptionsAreDim() {
     com.googlecode.lanterna.gui2.Panel bar = UiComponents.hintBar("a", "add", "q", "quit");
     java.util.List<com.googlecode.lanterna.gui2.Label> labels = new java.util.ArrayList<>();
     for (com.googlecode.lanterna.gui2.Component c : bar.getChildrenList()) {
@@ -99,12 +97,11 @@ public class UiComponentsTest {
     assertEquals("a", labels.get(0).getText());
     assertEquals(UiColors.BLUE, labels.get(0).getForegroundColor());
     assertTrue(labels.get(1).getText().contains("add"));
-    // Descriptions render BRIGHT — explicit, never relying on terminal default.
-    assertEquals(UiColors.BRIGHT, labels.get(1).getForegroundColor());
+    assertEquals(UiColors.DIM, labels.get(1).getForegroundColor());
     assertEquals("q", labels.get(2).getText());
     assertEquals(UiColors.BLUE, labels.get(2).getForegroundColor());
     assertTrue(labels.get(3).getText().contains("quit"));
-    assertEquals(UiColors.BRIGHT, labels.get(3).getForegroundColor());
+    assertEquals(UiColors.DIM, labels.get(3).getForegroundColor());
   }
 
   @Test(expected = IllegalArgumentException.class)

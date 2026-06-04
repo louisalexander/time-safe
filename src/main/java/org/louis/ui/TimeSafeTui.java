@@ -1,6 +1,5 @@
 package org.louis.ui;
 
-import com.googlecode.lanterna.SGR;
 import com.googlecode.lanterna.TextColor;
 import com.googlecode.lanterna.graphics.SimpleTheme;
 import com.googlecode.lanterna.gui2.BasicWindow;
@@ -71,13 +70,10 @@ public class TimeSafeTui implements NavigationController {
     gui =
         new MultiWindowTextGUI(
             screen, new DefaultWindowManager(), new EmptySpace(TextColor.ANSI.DEFAULT));
-    // Theme: explicit BRIGHT foreground + SGR.BOLD on every state, terminal-default background.
-    // BOLD is required because macOS Terminal (and many others) selects between "regular" and
-    // "bright" colour variants based on the bold attribute. Without it, even RGB(255,255,255)
-    // renders as a muted tone on tinted themes — the "dim" appearance the user reported.
-    // The SimpleTheme(fg, bg, styles...) constructor initialises *every* state (normal, preLight,
-    // selected, active, insensitive) to the same style, so BOLD applies uniformly.
-    gui.setTheme(new SimpleTheme(UiColors.BRIGHT, TextColor.ANSI.DEFAULT, SGR.BOLD));
+    // Theme: BRIGHT (ANSI.WHITE_BRIGHT) foreground, terminal-default background. No SGR.BOLD —
+    // BOLD would collapse the DIM (ANSI.WHITE) and BRIGHT (ANSI.WHITE_BRIGHT) distinction the
+    // spec relies on (DIM is meant to render as gray).
+    gui.setTheme(new SimpleTheme(UiColors.BRIGHT, TextColor.ANSI.DEFAULT));
 
     try {
       config = Config.load();
