@@ -2,7 +2,6 @@ package org.louis.ui;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import com.googlecode.lanterna.gui2.Label;
@@ -22,18 +21,18 @@ public class UiComponentsTest {
   }
 
   @Test
-  public void sectionLabelDoesNotOverrideForeground() {
+  public void sectionLabelRendersBright() {
     Label l = UiComponents.sectionLabel("Secrets — repo");
     assertEquals("Secrets — repo", l.getText());
-    // No dimming anywhere — section label renders at terminal default.
-    assertNull(l.getForegroundColor());
+    // No dimming anywhere — section label renders BRIGHT, not muted-terminal-default.
+    assertEquals(UiColors.BRIGHT, l.getForegroundColor());
   }
 
   @Test
-  public void dimLabelDoesNotOverrideForeground() {
-    // dimLabel kept the old API name but no longer dims. Renders at terminal default.
+  public void dimLabelRendersBright() {
+    // dimLabel kept the old API name but no longer dims. Renders BRIGHT.
     Label l = UiComponents.dimLabel("Hint text");
-    assertNull(l.getForegroundColor());
+    assertEquals(UiColors.BRIGHT, l.getForegroundColor());
   }
 
   @Test
@@ -90,7 +89,7 @@ public class UiComponentsTest {
   }
 
   @Test
-  public void hintBarKeysAreBlueDescriptionsAreNormal() {
+  public void hintBarKeysAreBlueDescriptionsAreBright() {
     com.googlecode.lanterna.gui2.Panel bar = UiComponents.hintBar("a", "add", "q", "quit");
     java.util.List<com.googlecode.lanterna.gui2.Label> labels = new java.util.ArrayList<>();
     for (com.googlecode.lanterna.gui2.Component c : bar.getChildrenList()) {
@@ -100,12 +99,12 @@ public class UiComponentsTest {
     assertEquals("a", labels.get(0).getText());
     assertEquals(UiColors.BLUE, labels.get(0).getForegroundColor());
     assertTrue(labels.get(1).getText().contains("add"));
-    // Descriptions render at terminal default — no foreground override at all.
-    assertNull(labels.get(1).getForegroundColor());
+    // Descriptions render BRIGHT — explicit, never relying on terminal default.
+    assertEquals(UiColors.BRIGHT, labels.get(1).getForegroundColor());
     assertEquals("q", labels.get(2).getText());
     assertEquals(UiColors.BLUE, labels.get(2).getForegroundColor());
     assertTrue(labels.get(3).getText().contains("quit"));
-    assertNull(labels.get(3).getForegroundColor());
+    assertEquals(UiColors.BRIGHT, labels.get(3).getForegroundColor());
   }
 
   @Test(expected = IllegalArgumentException.class)

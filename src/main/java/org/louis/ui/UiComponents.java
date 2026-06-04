@@ -24,22 +24,27 @@ public final class UiComponents {
   }
 
   /**
-   * Section label (e.g. "Secrets — owner/repo"). Renders at the terminal's default foreground — no
-   * dimming. Dimming is reserved for unselected list rows and low-urgency countdowns.
+   * Section label (e.g. "Secrets — owner/repo"). Renders BRIGHT — no dimming. We set the foreground
+   * explicitly because the terminal's default foreground can render as a muted hue on tinted themes
+   * (the source of the "dim" appearance we previously had).
    */
   public static Label sectionLabel(String text) {
-    return new Label(text);
+    Label l = new Label(text);
+    l.setForegroundColor(UiColors.BRIGHT);
+    return l;
   }
 
   /**
    * Plain label for hints, form sub-text, and instructions. Kept as {@code dimLabel} for API
-   * compatibility; renders at the terminal's default foreground. (Historically rendered in DIM.)
+   * compatibility; renders BRIGHT (historically rendered in DIM, then default; now explicit).
    */
   public static Label dimLabel(String text) {
-    return new Label(text);
+    Label l = new Label(text);
+    l.setForegroundColor(UiColors.BRIGHT);
+    return l;
   }
 
-  /** Bright white label (headings, names). */
+  /** Bright white label (headings, names). Equivalent to {@link #sectionLabel(String)}. */
   public static Label brightLabel(String text) {
     Label l = new Label(text);
     l.setForegroundColor(UiColors.BRIGHT);
@@ -81,14 +86,13 @@ public final class UiComponents {
     return new EmptySpace(new TerminalSize(1, 1));
   }
 
-  /**
-   * Build a simple two-column key/value row panel. Both key and value render at the terminal's
-   * default foreground — no dimming. The padding visually separates them.
-   */
+  /** Build a simple two-column key/value row panel. Both labels render BRIGHT. */
   public static Panel fieldRow(String key, String value) {
     Panel row = new Panel(new LinearLayout(Direction.HORIZONTAL));
     Label keyLabel = new Label(String.format("%-12s", key));
+    keyLabel.setForegroundColor(UiColors.BRIGHT);
     Label valueLabel = new Label(value);
+    valueLabel.setForegroundColor(UiColors.BRIGHT);
     row.addComponent(keyLabel);
     row.addComponent(valueLabel);
     return row;
@@ -96,7 +100,7 @@ public final class UiComponents {
 
   /**
    * Build a horizontal hint bar: each pair of (key, description) renders as the key in BLUE
-   * followed by the description in DIM. Pairs are separated by three spaces.
+   * followed by the description in BRIGHT. Pairs are separated by three spaces.
    *
    * <p>Example: {@code hintBar("↵", "open", "a", "add", "s", "setup", "q", "quit")}.
    */
@@ -110,9 +114,10 @@ public final class UiComponents {
       String description = keyDescriptionPairs[i + 1];
       Label keyLabel = new Label(key);
       keyLabel.setForegroundColor(UiColors.BLUE);
-      // Descriptions render at the terminal's default foreground — no dimming.
       Label descLabel =
           new Label(" " + description + (i + 2 < keyDescriptionPairs.length ? "   " : ""));
+      // Descriptions render BRIGHT — no dimming.
+      descLabel.setForegroundColor(UiColors.BRIGHT);
       row.addComponent(keyLabel);
       row.addComponent(descLabel);
     }

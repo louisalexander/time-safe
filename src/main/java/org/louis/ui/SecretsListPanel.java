@@ -151,6 +151,9 @@ public class SecretsListPanel {
         int cols = size.getColumns();
         int selectedIdx = component.getSelectedIndex();
 
+        // Clear any SGR modifiers inherited from the parent component's theme — without this,
+        // an ambient bold/faint can leak in and tint the renderer's text.
+        graphics.clearModifiers();
         // Deliberately DO NOT call graphics.setBackgroundColor here.
         // The terminal's own background must show through, like Claude Code's CLI.
         // See SecretsListPanelRendererTest#rendererSourceNeverSetsBackgroundColor.
@@ -164,15 +167,16 @@ public class SecretsListPanel {
           graphics.setForegroundColor(UiColors.BLUE);
           graphics.putString(0, row, selected ? "›  " : "   ");
 
-          // Name column. Selected row uses BRIGHT; unselected uses the terminal default.
+          // Name column — always BRIGHT. Selection is conveyed by the BLUE cursor, not by
+          // dimming the unselected rows.
           String name = s.getName();
           if (name.length() > 22) name = name.substring(0, 20) + "..";
           String paddedName = String.format("%-24s", name);
-          graphics.setForegroundColor(selected ? UiColors.BRIGHT : TextColor.ANSI.DEFAULT);
+          graphics.setForegroundColor(UiColors.BRIGHT);
           graphics.putString(3, row, paddedName);
 
           // Status column — right-aligned, never overlaps name.
-          // Color is semantic: GREEN ready, ORANGE urgency (<24h), terminal default otherwise.
+          // Color is semantic: GREEN ready, ORANGE urgency (<24h), BRIGHT otherwise.
           String statusText;
           TextColor statusColor;
           if (s.availableForDecryption()) {
@@ -181,7 +185,7 @@ public class SecretsListPanel {
           } else {
             long secs = ChronoUnit.SECONDS.between(Instant.now(), s.getDecryptionDate());
             statusText = formatTimeRemaining(s.getDecryptionDate());
-            statusColor = secs < 86400L ? UiColors.ORANGE : TextColor.ANSI.DEFAULT;
+            statusColor = secs < 86400L ? UiColors.ORANGE : UiColors.BRIGHT;
           }
           int statusCol = Math.max(28, cols - statusText.length() - 2);
           graphics.setForegroundColor(statusColor);

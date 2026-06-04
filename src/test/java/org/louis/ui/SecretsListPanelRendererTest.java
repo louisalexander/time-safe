@@ -53,6 +53,30 @@ public class SecretsListPanelRendererTest {
   }
 
   @Test
+  public void rendererClearsInheritedModifiers() throws IOException {
+    String source = readSource();
+    String renderer = extractRendererBlock(source);
+    // Without clearModifiers(), an ambient bold/faint from the parent component's theme can
+    // leak in and tint the renderer's text, producing the "dim" look the user reported.
+    assertTrue(
+        "Renderer must call graphics.clearModifiers() before drawing",
+        renderer.contains("clearModifiers"));
+  }
+
+  @Test
+  public void rendererNeverFallsBackToAnsiDefaultForeground() throws IOException {
+    // Setting foreground to ANSI.DEFAULT tells the terminal "use your default foreground", which
+    // renders as a muted hue on tinted themes — the source of the user's "dim" complaint.
+    // Every foreground must be an explicit colour (BLUE / BRIGHT / GREEN / ORANGE / RED).
+    String renderer = extractRendererBlock(readSource());
+    assertFalse(
+        "Renderer must not use TextColor.ANSI.DEFAULT as a foreground colour. Use an explicit "
+            + "UiColors.* value instead.",
+        renderer.matches(
+            "(?s).*setForegroundColor\\s*\\(\\s*TextColor\\s*\\.\\s*ANSI\\s*\\.\\s*DEFAULT.*"));
+  }
+
+  @Test
   public void noBackgroundConstantsLingerInUiColors() throws IOException {
     String src = Files.readString(Path.of("src/main/java/org/louis/ui/UiColors.java"));
     // We do not expose BG / BG_SELECTED constants — those would tempt re-introducing the tint.

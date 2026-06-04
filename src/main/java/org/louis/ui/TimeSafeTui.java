@@ -70,16 +70,18 @@ public class TimeSafeTui implements NavigationController {
     gui =
         new MultiWindowTextGUI(
             screen, new DefaultWindowManager(), new EmptySpace(TextColor.ANSI.DEFAULT));
-    // Use a transparent theme so the terminal's own background shows through
-    // everywhere — no blue listbox / window backgrounds painted by the default theme.
+    // Theme: explicit BRIGHT foreground everywhere (no terminal-default greys), terminal-default
+    // background so the user's theme shows through. ANSI.DEFAULT for foreground tells the terminal
+    // "use your default foreground" — which on a tinted theme can render as a muted hue, the
+    // source of the "dimming" the user reported.
     gui.setTheme(
         SimpleTheme.makeTheme(
             false,
+            UiColors.BRIGHT,
             TextColor.ANSI.DEFAULT,
+            UiColors.BRIGHT,
             TextColor.ANSI.DEFAULT,
-            TextColor.ANSI.DEFAULT,
-            TextColor.ANSI.DEFAULT,
-            TextColor.ANSI.DEFAULT,
+            UiColors.BRIGHT,
             TextColor.ANSI.DEFAULT,
             TextColor.ANSI.DEFAULT));
 
