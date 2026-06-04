@@ -1,19 +1,15 @@
 package org.louis.ui;
 
-import com.googlecode.lanterna.TerminalPosition;
-import com.googlecode.lanterna.TerminalSize;
 import com.googlecode.lanterna.TextColor;
-import com.googlecode.lanterna.gui2.ActionListBox;
 import com.googlecode.lanterna.gui2.Direction;
-import com.googlecode.lanterna.gui2.InteractableRenderer;
 import com.googlecode.lanterna.gui2.Label;
 import com.googlecode.lanterna.gui2.LinearLayout;
 import com.googlecode.lanterna.gui2.Panel;
-import com.googlecode.lanterna.gui2.TextGUIGraphics;
 import com.googlecode.lanterna.gui2.Window;
 import com.googlecode.lanterna.gui2.WindowListener;
 import com.googlecode.lanterna.gui2.WindowListenerAdapter;
 import com.googlecode.lanterna.input.KeyStroke;
+import com.googlecode.lanterna.input.KeyType;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -21,27 +17,60 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.louis.Secret;
 
+/**
+ * Home screen: a list of secrets with a coloured countdown per row.
+ *
+ * <p>The list is a plain {@link Panel} containing one horizontal {@link Panel} per secret, each
+ * holding three {@link Label}s (cursor, name, status). Arrow-key navigation is handled by the
+ * window listener — no custom {@code InteractableRenderer} and no {@code ActionListBox}. This keeps
+ * the visual model close to the spec's HTML mockup and lets {@link #refreshTimes()} just call
+ * {@code setText} on the per-row status Labels instead of rebuilding the list every second.
+ */
 public class SecretsListPanel {
 
+  private static final int NAME_WIDTH = 24;
+  private static final int NAME_TRUNCATE_AT = 22;
+  private static final int RIGHT_PAD_AFTER_NAME = 26;
+
   private final NavigationController nav;
+
   private Panel panel;
-  private ActionListBox listBox;
-  private List<Secret> cachedSecrets = new ArrayList<>();
+  private List<Secret> secrets = new ArrayList<>();
+  private final List<Label> cursorLabels = new ArrayList<>();
+  private final List<Label> nameLabels = new ArrayList<>();
+  private final List<Label> statusLabels = new ArrayList<>();
+  private int selectedIndex = 0;
   private Label statusLine;
 
   public SecretsListPanel(NavigationController nav) {
     this.nav = nav;
   }
 
-  // Called by the window to display the panel for the first time.
   public Panel build() {
     panel = new Panel(new LinearLayout(Direction.VERTICAL));
 
-    String repo = nav.config() != null ? "Secrets — " + nav.config().githubRepo : "Secrets";
-    panel.addComponent(UiComponents.sectionLabel(repo));
+    String header = nav.config() != null ? "Secrets — " + nav.config().githubRepo : "Secrets";
+    panel.addComponent(UiComponents.sectionLabel(header));
     panel.addComponent(UiComponents.spacer());
 
-    rebuildList();
+    cursorLabels.clear();
+    nameLabels.clear();
+    statusLabels.clear();
+    selectedIndex = 0;
+
+    if (nav.vault() == null) {
+      secrets = new ArrayList<>();
+      panel.addComponent(UiComponents.dimLabel("No config found — press s to open Setup."));
+    } else {
+      secrets = new ArrayList<>(nav.vault().getSecrets());
+      if (secrets.isEmpty()) {
+        panel.addComponent(UiComponents.dimLabel("No secrets yet — press a to add one."));
+      } else {
+        for (int i = 0; i < secrets.size(); i++) {
+          panel.addComponent(buildRow(i, secrets.get(i)));
+        }
+      }
+    }
 
     statusLine = new Label("");
     panel.addComponent(statusLine);
@@ -55,6 +84,21 @@ public class SecretsListPanel {
     return new WindowListenerAdapter() {
       @Override
       public void onUnhandledInput(Window w, KeyStroke k, AtomicBoolean consumed) {
+        if (k.getKeyType() == KeyType.ArrowUp) {
+          consumed.set(true);
+          moveSelection(-1);
+          return;
+        }
+        if (k.getKeyType() == KeyType.ArrowDown) {
+          consumed.set(true);
+          moveSelection(1);
+          return;
+        }
+        if (k.getKeyType() == KeyType.Enter) {
+          consumed.set(true);
+          openSelected();
+          return;
+        }
         if (k.getCharacter() == null) return;
         switch (Character.toLowerCase(k.getCharacter())) {
           case 'a':
@@ -78,22 +122,14 @@ public class SecretsListPanel {
     };
   }
 
-  /**
-   * Called by the countdown timer every second. Updates the displayed time without rebuilding the
-   * whole panel — just clears and re-adds items, preserving selection.
-   */
+  /** Called by the countdown timer every second. Updates each row's status Label in place. */
   public void refreshTimes() {
-    if (listBox == null || cachedSecrets.isEmpty()) return;
-    int selected = listBox.getSelectedIndex();
-    listBox.clearItems();
-    for (Secret s : cachedSecrets) {
-      listBox.addItem("", () -> openDetail(s));
+    if (secrets.isEmpty()) return;
+    for (int i = 0; i < secrets.size(); i++) {
+      Secret s = secrets.get(i);
+      statusLabels.get(i).setText(statusText(s));
+      statusLabels.get(i).setForegroundColor(statusColor(s));
     }
-    if (selected >= 0 && selected < listBox.getItemCount()) {
-      listBox.setSelectedIndex(selected);
-    }
-    // Invalidate so the renderer repaints
-    listBox.invalidate();
   }
 
   /** Show a transient status message at the bottom of the list. */
@@ -103,96 +139,61 @@ public class SecretsListPanel {
     statusLine.setForegroundColor(isError ? UiColors.RED : UiColors.GREEN);
   }
 
-  private void rebuildList() {
-    listBox = null;
-    cachedSecrets.clear();
+  // ── Internals ────────────────────────────────────────────────────────────────
 
-    if (nav.vault() == null) {
-      panel.addComponent(UiComponents.dimLabel("No config found — press s to open Setup."));
-      return;
-    }
+  private Panel buildRow(int index, Secret s) {
+    Panel row = new Panel(new LinearLayout(Direction.HORIZONTAL));
 
-    cachedSecrets = new ArrayList<>(nav.vault().getSecrets());
+    Label cursor = new Label(index == selectedIndex ? "›  " : "   ");
+    cursor.setForegroundColor(UiColors.BLUE);
+    cursorLabels.add(cursor);
 
-    if (cachedSecrets.isEmpty()) {
-      panel.addComponent(UiComponents.dimLabel("No secrets yet — press a to add one."));
-      return;
-    }
+    Label name = new Label(formatName(s.getName()));
+    name.setForegroundColor(index == selectedIndex ? UiColors.BRIGHT : UiColors.DIM);
+    nameLabels.add(name);
 
-    listBox = new ActionListBox();
-    for (Secret s : cachedSecrets) {
-      listBox.addItem("", () -> openDetail(s));
-    }
-    listBox.setRenderer(buildListRenderer());
-    panel.addComponent(listBox);
+    Label status = new Label(statusText(s));
+    status.setForegroundColor(statusColor(s));
+    statusLabels.add(status);
+
+    row.addComponent(cursor);
+    row.addComponent(name);
+    row.addComponent(status);
+    return row;
   }
 
-  private void openDetail(Secret s) {
-    new SecretDetailPanel(nav, s).show();
+  private void moveSelection(int delta) {
+    if (secrets.isEmpty()) return;
+    int next = Math.max(0, Math.min(secrets.size() - 1, selectedIndex + delta));
+    if (next == selectedIndex) return;
+    cursorLabels.get(selectedIndex).setText("   ");
+    nameLabels.get(selectedIndex).setForegroundColor(UiColors.DIM);
+    selectedIndex = next;
+    cursorLabels.get(selectedIndex).setText("›  ");
+    nameLabels.get(selectedIndex).setForegroundColor(UiColors.BRIGHT);
   }
 
-  private InteractableRenderer<ActionListBox> buildListRenderer() {
-    List<Secret> secrets = cachedSecrets; // captured reference — same list mutated by refreshTimes
-    return new InteractableRenderer<ActionListBox>() {
-      @Override
-      public TerminalSize getPreferredSize(ActionListBox component) {
-        return new TerminalSize(70, Math.max(1, secrets.size()));
-      }
+  private void openSelected() {
+    if (secrets.isEmpty()) return;
+    new SecretDetailPanel(nav, secrets.get(selectedIndex)).show();
+  }
 
-      @Override
-      public TerminalPosition getCursorLocation(ActionListBox component) {
-        // No visible cursor — the colored "›" prefix indicates selection.
-        return null;
-      }
+  private static String formatName(String raw) {
+    String name = raw;
+    if (name.length() > NAME_TRUNCATE_AT) {
+      name = name.substring(0, NAME_TRUNCATE_AT - 2) + "..";
+    }
+    return String.format("%-" + (NAME_WIDTH + RIGHT_PAD_AFTER_NAME) + "s", name);
+  }
 
-      @Override
-      public void drawComponent(TextGUIGraphics graphics, ActionListBox component) {
-        TerminalSize size = component.getSize();
-        int cols = size.getColumns();
-        int selectedIdx = component.getSelectedIndex();
+  private static String statusText(Secret s) {
+    return s.availableForDecryption() ? "● ready" : formatTimeRemaining(s.getDecryptionDate());
+  }
 
-        // Clear any SGR modifiers inherited from the parent component's theme. We intentionally
-        // do NOT enable BOLD — that would collapse the DIM (ANSI.WHITE) and BRIGHT
-        // (ANSI.WHITE_BRIGHT) distinction the spec relies on.
-        graphics.clearModifiers();
-        // Deliberately DO NOT call graphics.setBackgroundColor here.
-        // The terminal's own background must show through, like Claude Code's CLI.
-        // See SecretsListPanelRendererTest#rendererSourceNeverSetsBackgroundColor.
-        graphics.fill(' ');
-
-        for (int row = 0; row < Math.min(secrets.size(), size.getRows()); row++) {
-          Secret s = secrets.get(row);
-          boolean selected = row == selectedIdx;
-
-          // Cursor prefix "›  " for selected, "   " otherwise — always in BLUE.
-          graphics.setForegroundColor(UiColors.BLUE);
-          graphics.putString(0, row, selected ? "›  " : "   ");
-
-          // Name column: BRIGHT for the selected row, DIM otherwise.
-          String name = s.getName();
-          if (name.length() > 22) name = name.substring(0, 20) + "..";
-          String paddedName = String.format("%-24s", name);
-          graphics.setForegroundColor(selected ? UiColors.BRIGHT : UiColors.DIM);
-          graphics.putString(3, row, paddedName);
-
-          // Status column — right-aligned, never overlaps name.
-          // Colour is semantic: GREEN ready, ORANGE urgent (<24h), DIM long countdown (≥24h).
-          String statusText;
-          TextColor statusColor;
-          if (s.availableForDecryption()) {
-            statusText = "● ready";
-            statusColor = UiColors.GREEN;
-          } else {
-            long secs = ChronoUnit.SECONDS.between(Instant.now(), s.getDecryptionDate());
-            statusText = formatTimeRemaining(s.getDecryptionDate());
-            statusColor = secs < 86400L ? UiColors.ORANGE : UiColors.DIM;
-          }
-          int statusCol = Math.max(28, cols - statusText.length() - 2);
-          graphics.setForegroundColor(statusColor);
-          graphics.putString(statusCol, row, statusText);
-        }
-      }
-    };
+  private static TextColor statusColor(Secret s) {
+    if (s.availableForDecryption()) return UiColors.GREEN;
+    long secs = ChronoUnit.SECONDS.between(Instant.now(), s.getDecryptionDate());
+    return secs < 86400L ? UiColors.ORANGE : UiColors.DIM;
   }
 
   /**
