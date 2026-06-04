@@ -12,8 +12,10 @@ import com.googlecode.lanterna.gui2.Panel;
 import com.googlecode.lanterna.gui2.Panels;
 import com.googlecode.lanterna.gui2.TextBox;
 import com.googlecode.lanterna.gui2.Window;
+import com.googlecode.lanterna.gui2.WindowListenerAdapter;
 import com.googlecode.lanterna.gui2.dialogs.MessageDialog;
 import com.googlecode.lanterna.gui2.dialogs.MessageDialogButton;
+import com.googlecode.lanterna.input.KeyStroke;
 import com.googlecode.lanterna.screen.Screen;
 import com.googlecode.lanterna.screen.TerminalScreen;
 import com.googlecode.lanterna.terminal.DefaultTerminalFactory;
@@ -30,6 +32,7 @@ import java.util.Base64;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import org.louis.Config;
 import org.louis.GitHubVault;
@@ -91,13 +94,40 @@ public class TimeSafeTui {
 
   private void buildMainWindow() {
     mainWindow.setComponent(buildMainWindowPanel());
+    mainWindow.addWindowListener(
+        new WindowListenerAdapter() {
+          @Override
+          public void onUnhandledInput(
+              Window sourceWindow, KeyStroke keyStroke, AtomicBoolean consumed) {
+            if (keyStroke.getCharacter() == null) return;
+            switch (Character.toLowerCase(keyStroke.getCharacter())) {
+              case 'a':
+                if (vaultManager != null) {
+                  consumed.set(true);
+                  showAddSecretDialog();
+                  rebuildSecretsList();
+                }
+                break;
+              case 's':
+                consumed.set(true);
+                showSetupDialog();
+                break;
+              case 'q':
+                consumed.set(true);
+                mainWindow.close();
+                break;
+              default:
+                break;
+            }
+          }
+        });
   }
 
   private void rebuildSecretsList() {
     mainContentPanel.removeAllComponents();
 
     if (vaultManager == null) {
-      Label msg = new Label("No config found — press Setup to get started.");
+      Label msg = new Label("No config found — press S to open Setup.");
       msg.setForegroundColor(TextColor.ANSI.WHITE);
       mainContentPanel.addComponent(msg);
       return;
@@ -107,7 +137,7 @@ public class TimeSafeTui {
     List<Secret> secretList = new ArrayList<>(secrets);
 
     if (secretList.isEmpty()) {
-      Label msg = new Label("No secrets yet — press Add Secret to create one.");
+      Label msg = new Label("No secrets yet — press A to add one.");
       msg.setForegroundColor(TextColor.ANSI.WHITE);
       mainContentPanel.addComponent(msg);
       return;
@@ -650,16 +680,16 @@ public class TimeSafeTui {
     if (vaultManager != null) {
       buttons.addComponent(
           new Button(
-              "Add Secret",
+              "(A)dd Secret",
               () -> {
                 showAddSecretDialog();
                 rebuildSecretsList();
               }));
       buttons.addComponent(new Label("   "));
     }
-    buttons.addComponent(new Button("Setup", this::showSetupDialog));
+    buttons.addComponent(new Button("(S)etup", this::showSetupDialog));
     buttons.addComponent(new Label("   "));
-    buttons.addComponent(new Button("Quit", mainWindow::close));
+    buttons.addComponent(new Button("(Q)uit", mainWindow::close));
     root.addComponent(buttons, com.googlecode.lanterna.gui2.BorderLayout.Location.BOTTOM);
 
     rebuildSecretsList();
