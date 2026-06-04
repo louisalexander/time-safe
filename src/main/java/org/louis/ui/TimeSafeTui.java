@@ -30,7 +30,6 @@ import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -54,6 +53,9 @@ public class TimeSafeTui {
   private Screen screen;
   private BasicWindow mainWindow;
   private Panel mainContentPanel;
+  private ActionListBox secretsListBox = null;
+  private List<Secret> cachedSecrets = new ArrayList<>();
+  private volatile boolean stopRefresh = false;
 
   /** Entry point: initialize screen and start the event loop. */
   public void run() throws IOException {
@@ -95,6 +97,7 @@ public class TimeSafeTui {
 
   private void buildMainWindow() {
     mainWindow.setComponent(buildMainWindowPanel());
+    startCountdownTimer();
     mainWindow.addWindowListener(
         new WindowListenerAdapter() {
           @Override
@@ -115,6 +118,7 @@ public class TimeSafeTui {
                 break;
               case 'q':
                 consumed.set(true);
+                stopRefresh = true;
                 mainWindow.close();
                 break;
               default:
@@ -125,6 +129,8 @@ public class TimeSafeTui {
   }
 
   private void rebuildSecretsList() {
+    secretsListBox = null;
+    cachedSecrets.clear();
     mainContentPanel.removeAllComponents();
 
     if (vaultManager == null) {
@@ -134,8 +140,8 @@ public class TimeSafeTui {
       return;
     }
 
-    Collection<Secret> secrets = vaultManager.getSecrets();
-    List<Secret> secretList = new ArrayList<>(secrets);
+    List<Secret> secretList = new ArrayList<>(vaultManager.getSecrets());
+    cachedSecrets.addAll(secretList);
 
     if (secretList.isEmpty()) {
       Label msg = new Label("No secrets yet — press A to add one.");
@@ -144,12 +150,23 @@ public class TimeSafeTui {
       return;
     }
 
-    ActionListBox listBox = new ActionListBox();
+    secretsListBox = new ActionListBox();
     for (Secret s : secretList) {
-      String label = formatSecretEntry(s);
-      listBox.addItem(label, () -> showSecretDetailWindow(s));
+      secretsListBox.addItem(formatSecretEntry(s), () -> showSecretDetailWindow(s));
     }
-    mainContentPanel.addComponent(listBox);
+    mainContentPanel.addComponent(secretsListBox);
+  }
+
+  private void refreshSecretTimes() {
+    if (secretsListBox == null || cachedSecrets.isEmpty()) return;
+    int selected = secretsListBox.getSelectedIndex();
+    secretsListBox.clearItems();
+    for (Secret s : cachedSecrets) {
+      secretsListBox.addItem(formatSecretEntry(s), () -> showSecretDetailWindow(s));
+    }
+    if (selected >= 0 && selected < secretsListBox.getItemCount()) {
+      secretsListBox.setSelectedIndex(selected);
+    }
   }
 
   // ── Secret detail window (Screen 2) ───────────────────────────────────────
@@ -681,6 +698,30 @@ public class TimeSafeTui {
     worker.start();
   }
 
+  // ── Countdown timer ───────────────────────────────────────────────────────
+
+  private void startCountdownTimer() {
+    Thread t =
+        new Thread(
+            () -> {
+              while (!stopRefresh) {
+                try {
+                  Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                  break;
+                }
+                if (stopRefresh) break;
+                try {
+                  gui.getGUIThread().invokeLater(this::refreshSecretTimes);
+                } catch (Exception e) {
+                  break;
+                }
+              }
+            });
+    t.setDaemon(true);
+    t.start();
+  }
+
   // ── Dialog style helpers ──────────────────────────────────────────────────
 
   private BasicWindow styledDialog() {
@@ -769,14 +810,16 @@ public class TimeSafeTui {
   }
 
   private String formatTimeRemaining(Instant decryptionDate) {
-    long totalMinutes = ChronoUnit.MINUTES.between(Instant.now(), decryptionDate);
-    if (totalMinutes <= 0) return "READY";
-    long days = totalMinutes / (60 * 24);
-    long hours = (totalMinutes % (60 * 24)) / 60;
-    if (days > 0 && hours > 0) return days + "d " + hours + "h";
-    if (days > 0) return days + "d";
-    if (hours > 0) return hours + "h";
-    return "< 1h";
+    long total = ChronoUnit.SECONDS.between(Instant.now(), decryptionDate);
+    if (total <= 0) return "READY";
+    long days = total / 86400;
+    long hours = (total % 86400) / 3600;
+    long minutes = (total % 3600) / 60;
+    long seconds = total % 60;
+    if (days > 0) return days + "d " + hours + "h " + String.format("%02dm", minutes);
+    if (hours > 0) return String.format("%dh %02dm %02ds", hours, minutes, seconds);
+    if (minutes > 0) return String.format("%dm %02ds", minutes, seconds);
+    return seconds + "s";
   }
 
   // ── Helper: build main window panel (for post-setup rebuild) ─────────────
@@ -821,7 +864,13 @@ public class TimeSafeTui {
     }
     buttons.addComponent(new Button("(S)etup", this::showSetupDialog));
     buttons.addComponent(new Label("   "));
-    buttons.addComponent(new Button("(Q)uit", mainWindow::close));
+    buttons.addComponent(
+        new Button(
+            "(Q)uit",
+            () -> {
+              stopRefresh = true;
+              mainWindow.close();
+            }));
     root.addComponent(buttons, com.googlecode.lanterna.gui2.BorderLayout.Location.BOTTOM);
 
     rebuildSecretsList();
