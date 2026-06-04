@@ -46,7 +46,7 @@ public class SecretsListPanel {
     statusLine = new Label("");
     panel.addComponent(statusLine);
     panel.addComponent(UiComponents.spacer());
-    panel.addComponent(UiComponents.dimLabel("↵ open   a add   s setup   q quit"));
+    panel.addComponent(UiComponents.hintBar("↵", "open", "a", "add", "s", "setup", "q", "quit"));
 
     return panel;
   }

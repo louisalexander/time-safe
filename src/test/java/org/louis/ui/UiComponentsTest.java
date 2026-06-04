@@ -79,4 +79,27 @@ public class UiComponentsTest {
     TextBox tb = UiComponents.multiLineInput(60, 8);
     assertNotNull(tb);
   }
+
+  @Test
+  public void hintBarKeysAreBlueDescriptionsAreDim() {
+    com.googlecode.lanterna.gui2.Panel bar = UiComponents.hintBar("a", "add", "q", "quit");
+    java.util.List<com.googlecode.lanterna.gui2.Label> labels = new java.util.ArrayList<>();
+    for (com.googlecode.lanterna.gui2.Component c : bar.getChildrenList()) {
+      if (c instanceof com.googlecode.lanterna.gui2.Label l) labels.add(l);
+    }
+    assertEquals(4, labels.size());
+    assertEquals("a", labels.get(0).getText());
+    assertEquals(UiColors.BLUE, labels.get(0).getForegroundColor());
+    assertTrue(labels.get(1).getText().contains("add"));
+    assertEquals(UiColors.DIM, labels.get(1).getForegroundColor());
+    assertEquals("q", labels.get(2).getText());
+    assertEquals(UiColors.BLUE, labels.get(2).getForegroundColor());
+    assertTrue(labels.get(3).getText().contains("quit"));
+    assertEquals(UiColors.DIM, labels.get(3).getForegroundColor());
+  }
+
+  @Test(expected = IllegalArgumentException.class)
+  public void hintBarRejectsOddArgumentCount() {
+    UiComponents.hintBar("a", "add", "q");
+  }
 }

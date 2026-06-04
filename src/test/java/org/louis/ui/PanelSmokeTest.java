@@ -73,12 +73,13 @@ public class PanelSmokeTest {
     FakeNavigationController nav = new FakeNavigationController().withConfig(config());
     SecretsListPanel sut = new SecretsListPanel(nav);
     Panel panel = sut.build();
-    boolean foundHints =
-        panel.getChildrenList().stream()
-            .filter(c -> c instanceof com.googlecode.lanterna.gui2.Label)
-            .map(c -> ((com.googlecode.lanterna.gui2.Label) c).getText())
-            .anyMatch(t -> t.contains("a add") && t.contains("s setup") && t.contains("q quit"));
-    assertTrue("Hint bar should be visible at bottom of list", foundHints);
+    // Hint bar is a horizontal Panel of key+desc Labels — walk the whole tree.
+    assertTrue("Hint bar should contain key letter a", containsLabelWithText(panel, "a"));
+    assertTrue("Hint bar should contain key letter s", containsLabelWithText(panel, "s"));
+    assertTrue("Hint bar should contain key letter q", containsLabelWithText(panel, "q"));
+    assertTrue("Hint bar should contain 'add'", containsLabelWithText(panel, "add"));
+    assertTrue("Hint bar should contain 'setup'", containsLabelWithText(panel, "setup"));
+    assertTrue("Hint bar should contain 'quit'", containsLabelWithText(panel, "quit"));
   }
 
   @Test

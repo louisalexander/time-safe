@@ -90,5 +90,30 @@ public final class UiComponents {
     return row;
   }
 
+  /**
+   * Build a horizontal hint bar: each pair of (key, description) renders as the key in BLUE
+   * followed by the description in DIM. Pairs are separated by three spaces.
+   *
+   * <p>Example: {@code hintBar("↵", "open", "a", "add", "s", "setup", "q", "quit")}.
+   */
+  public static Panel hintBar(String... keyDescriptionPairs) {
+    if ((keyDescriptionPairs.length & 1) != 0) {
+      throw new IllegalArgumentException("hintBar requires an even number of arguments");
+    }
+    Panel row = new Panel(new LinearLayout(Direction.HORIZONTAL));
+    for (int i = 0; i < keyDescriptionPairs.length; i += 2) {
+      String key = keyDescriptionPairs[i];
+      String description = keyDescriptionPairs[i + 1];
+      Label keyLabel = new Label(key);
+      keyLabel.setForegroundColor(UiColors.BLUE);
+      Label descLabel =
+          new Label(" " + description + (i + 2 < keyDescriptionPairs.length ? "   " : ""));
+      descLabel.setForegroundColor(UiColors.DIM);
+      row.addComponent(keyLabel);
+      row.addComponent(descLabel);
+    }
+    return row;
+  }
+
   private UiComponents() {}
 }
