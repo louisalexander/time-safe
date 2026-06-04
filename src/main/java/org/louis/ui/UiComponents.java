@@ -23,18 +23,20 @@ public final class UiComponents {
     return l;
   }
 
-  /** Dim section label (e.g. "Secrets — owner/repo"). */
+  /**
+   * Section label (e.g. "Secrets — owner/repo"). Renders at the terminal's default foreground — no
+   * dimming. Dimming is reserved for unselected list rows and low-urgency countdowns.
+   */
   public static Label sectionLabel(String text) {
-    Label l = new Label(text);
-    l.setForegroundColor(UiColors.DIM);
-    return l;
+    return new Label(text);
   }
 
-  /** Plain dim label for hints and subtitles. */
+  /**
+   * Plain label for hints, form sub-text, and instructions. Kept as {@code dimLabel} for API
+   * compatibility; renders at the terminal's default foreground. (Historically rendered in DIM.)
+   */
   public static Label dimLabel(String text) {
-    Label l = new Label(text);
-    l.setForegroundColor(UiColors.DIM);
-    return l;
+    return new Label(text);
   }
 
   /** Bright white label (headings, names). */
@@ -79,11 +81,13 @@ public final class UiComponents {
     return new EmptySpace(new TerminalSize(1, 1));
   }
 
-  /** Build a simple two-column key/value row panel. */
+  /**
+   * Build a simple two-column key/value row panel. Both key and value render at the terminal's
+   * default foreground — no dimming. The padding visually separates them.
+   */
   public static Panel fieldRow(String key, String value) {
     Panel row = new Panel(new LinearLayout(Direction.HORIZONTAL));
     Label keyLabel = new Label(String.format("%-12s", key));
-    keyLabel.setForegroundColor(UiColors.DIM);
     Label valueLabel = new Label(value);
     row.addComponent(keyLabel);
     row.addComponent(valueLabel);
@@ -106,9 +110,9 @@ public final class UiComponents {
       String description = keyDescriptionPairs[i + 1];
       Label keyLabel = new Label(key);
       keyLabel.setForegroundColor(UiColors.BLUE);
+      // Descriptions render at the terminal's default foreground — no dimming.
       Label descLabel =
           new Label(" " + description + (i + 2 < keyDescriptionPairs.length ? "   " : ""));
-      descLabel.setForegroundColor(UiColors.DIM);
       row.addComponent(keyLabel);
       row.addComponent(descLabel);
     }

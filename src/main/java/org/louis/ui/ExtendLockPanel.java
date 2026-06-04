@@ -37,9 +37,8 @@ public class ExtendLockPanel {
     TextBox daysBox = UiComponents.singleLineInput(10);
     daysBox.setText("30");
 
-    // Live preview label
+    // Live preview label (terminal default foreground)
     Label previewLabel = new Label("Unlocks on " + computePreview(30));
-    previewLabel.setForegroundColor(UiColors.DIM);
 
     // Error label
     Label errorLine = new Label("");

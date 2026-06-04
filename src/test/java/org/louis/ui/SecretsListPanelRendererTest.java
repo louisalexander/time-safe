@@ -64,6 +64,44 @@ public class SecretsListPanelRendererTest {
         src.matches("(?s).*\\bpublic static final TextColor BG\\b.*"));
   }
 
+  @Test
+  public void dimIsRestrictedToItsThreeLegitimateUses() throws IOException {
+    // DIM has exactly three semantic uses:
+    //   (1) unselected list rows                       — SecretsListPanel
+    //   (2) low-urgency countdown / locked status      — SecretsListPanel, SecretDetailPanel
+    //   (3) disabled action keys when secret not ready — SecretDetailPanel
+    //
+    // Everywhere else, "labels and hints" should render at the terminal's default foreground
+    // (normal opacity). This test guards against DIM creeping back into section labels, form
+    // sub-text, hint descriptions, preview labels, etc.
+    Path[] mustNotUseDim = {
+      Path.of("src/main/java/org/louis/ui/UiComponents.java"),
+      Path.of("src/main/java/org/louis/ui/DecryptPanel.java"),
+      Path.of("src/main/java/org/louis/ui/ExtendLockPanel.java"),
+      Path.of("src/main/java/org/louis/ui/DeletePanel.java"),
+      Path.of("src/main/java/org/louis/ui/AddSecretPanel.java"),
+      Path.of("src/main/java/org/louis/ui/SetupPanel.java"),
+    };
+    for (Path p : mustNotUseDim) {
+      String src = Files.readString(p);
+      assertFalse(
+          p.getFileName()
+              + " must not reference UiColors.DIM — dimming is reserved for unselected list "
+              + "rows, low-urgency countdowns, and disabled actions",
+          src.contains("UiColors.DIM"));
+    }
+
+    // The two files that *may* use DIM must in fact still do so — sanity check that we didn't
+    // accidentally regress the legitimate uses.
+    assertTrue(
+        "SecretsListPanel must still use UiColors.DIM for unselected rows and >24h countdowns",
+        Files.readString(SOURCE).contains("UiColors.DIM"));
+    assertTrue(
+        "SecretDetailPanel must still use UiColors.DIM for locked status and disabled actions",
+        Files.readString(Path.of("src/main/java/org/louis/ui/SecretDetailPanel.java"))
+            .contains("UiColors.DIM"));
+  }
+
   private String readSource() throws IOException {
     if (!Files.exists(SOURCE)) {
       fail("Source file not found: " + SOURCE.toAbsolutePath());

@@ -83,12 +83,12 @@ public class AddSecretPanel {
     TextBox daysBox = UiComponents.singleLineInput(10);
     if (savedDays > 0) daysBox.setText(String.valueOf(savedDays));
 
+    // Live preview at terminal default foreground.
     Label previewLabel =
         new Label(
             savedDays > 0
                 ? "Unlocks on " + UiComponents.previewUnlockDate(savedDays)
                 : "Unlocks on —");
-    previewLabel.setForegroundColor(UiColors.DIM);
     Label errorLine = new Label("");
     errorLine.setForegroundColor(UiColors.RED);
 
