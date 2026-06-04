@@ -265,16 +265,21 @@ public class TimeSafeTui {
   // ── Decrypt dialog (Screen 3) ──────────────────────────────────────────────
 
   private void showDecryptDialog(Secret secret, BasicWindow detailWin) {
-    BasicWindow dlg = new BasicWindow("Decrypt: " + secret.getName());
-    dlg.setHints(Set.of(Window.Hint.CENTERED));
+    BasicWindow dlg = styledDialog();
 
     Panel panel = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.VERTICAL));
-    panel.addComponent(new Label("Paste the base64 key from your unlock email:"));
+    panel.addComponent(
+        new com.googlecode.lanterna.gui2.EmptySpace(
+            new com.googlecode.lanterna.TerminalSize(62, 1)));
+    panel.addComponent(new Label("  Paste the base64 key from your unlock email:  "));
     TextBox keyBox = new TextBox(new com.googlecode.lanterna.TerminalSize(60, 1));
     panel.addComponent(keyBox);
-    panel.addComponent(new Label(""));
+    panel.addComponent(
+        new com.googlecode.lanterna.gui2.EmptySpace(
+            new com.googlecode.lanterna.TerminalSize(1, 1)));
 
     Panel btns = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.HORIZONTAL));
+    btns.addComponent(new Label("  "));
     btns.addComponent(
         new Button(
             "Decrypt",
@@ -306,40 +311,46 @@ public class TimeSafeTui {
                   ex -> showError("Decryption Failed", ex.getMessage()));
             }));
     btns.addComponent(new Label("  "));
-    btns.addComponent(new Button("Cancel", dlg::close));
+    btns.addComponent(new Button("Cancel [Esc]", dlg::close));
+    btns.addComponent(new Label("  "));
     panel.addComponent(btns);
+    panel.addComponent(
+        new com.googlecode.lanterna.gui2.EmptySpace(
+            new com.googlecode.lanterna.TerminalSize(1, 1)));
 
-    dlg.setComponent(panel);
-    addEscapeToClose(dlg);
-    gui.addWindow(dlg);
-    gui.setActiveWindow(dlg);
+    openStyledDialog(dlg, "Decrypt: " + secret.getName(), panel);
   }
 
   // ── Add secret dialog (Screen 4) ──────────────────────────────────────────
 
   private void showAddSecretDialog() {
-    BasicWindow dlg = new BasicWindow("Add Secret");
-    dlg.setHints(Set.of(Window.Hint.CENTERED));
+    BasicWindow dlg = styledDialog();
 
     Panel panel = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.VERTICAL));
+    panel.addComponent(
+        new com.googlecode.lanterna.gui2.EmptySpace(
+            new com.googlecode.lanterna.TerminalSize(50, 1)));
 
     Panel fields = new Panel(new GridLayout(2));
-    fields.addComponent(new Label("Name:"));
+    fields.addComponent(new Label("  Name:            "));
     TextBox nameBox = new TextBox(new com.googlecode.lanterna.TerminalSize(30, 1));
     fields.addComponent(nameBox);
 
-    fields.addComponent(new Label("Secret:"));
+    fields.addComponent(new Label("  Secret:          "));
     TextBox secretBox = new TextBox(new com.googlecode.lanterna.TerminalSize(30, 1)).setMask('*');
     fields.addComponent(secretBox);
 
-    fields.addComponent(new Label("Lock for (days):"));
+    fields.addComponent(new Label("  Lock for (days): "));
     TextBox daysBox = new TextBox(new com.googlecode.lanterna.TerminalSize(10, 1));
     fields.addComponent(daysBox);
 
     panel.addComponent(fields);
-    panel.addComponent(new Label(""));
+    panel.addComponent(
+        new com.googlecode.lanterna.gui2.EmptySpace(
+            new com.googlecode.lanterna.TerminalSize(1, 1)));
 
     Panel btns = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.HORIZONTAL));
+    btns.addComponent(new Label("  "));
     btns.addComponent(
         new Button(
             "Save",
@@ -389,13 +400,14 @@ public class TimeSafeTui {
                   });
             }));
     btns.addComponent(new Label("  "));
-    btns.addComponent(new Button("Cancel", dlg::close));
+    btns.addComponent(new Button("Cancel [Esc]", dlg::close));
+    btns.addComponent(new Label("  "));
     panel.addComponent(btns);
+    panel.addComponent(
+        new com.googlecode.lanterna.gui2.EmptySpace(
+            new com.googlecode.lanterna.TerminalSize(1, 1)));
 
-    dlg.setComponent(panel);
-    addEscapeToClose(dlg);
-    gui.addWindow(dlg);
-    gui.setActiveWindow(dlg);
+    openStyledDialog(dlg, "Add Secret", panel);
     // Wait for this dialog to close before returning so caller can rebuildSecretsList
     gui.waitForWindowToClose(dlg);
   }
@@ -403,18 +415,23 @@ public class TimeSafeTui {
   // ── Extend lock dialog (Screen 5) ─────────────────────────────────────────
 
   private void showExtendLockDialog(Secret secret, BasicWindow detailWin) {
-    BasicWindow dlg = new BasicWindow("Extend Lock: " + secret.getName());
-    dlg.setHints(Set.of(Window.Hint.CENTERED));
+    BasicWindow dlg = styledDialog();
 
     Panel panel = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.VERTICAL));
-    panel.addComponent(new Label("Additional days to add to the lock:"));
+    panel.addComponent(
+        new com.googlecode.lanterna.gui2.EmptySpace(
+            new com.googlecode.lanterna.TerminalSize(52, 1)));
+    panel.addComponent(new Label("  Additional days to add to the lock:  "));
     TextBox daysBox = new TextBox(new com.googlecode.lanterna.TerminalSize(10, 1)).setText("30");
     panel.addComponent(daysBox);
     panel.addComponent(
-        new Label("Current unlock: " + formatUnlockDate(secret.getDecryptionDate())));
-    panel.addComponent(new Label(""));
+        new Label("  Current unlock: " + formatUnlockDate(secret.getDecryptionDate()) + "  "));
+    panel.addComponent(
+        new com.googlecode.lanterna.gui2.EmptySpace(
+            new com.googlecode.lanterna.TerminalSize(1, 1)));
 
     Panel btns = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.HORIZONTAL));
+    btns.addComponent(new Label("  "));
     btns.addComponent(
         new Button(
             "Extend",
@@ -440,28 +457,67 @@ public class TimeSafeTui {
                   ex -> showError("Error", ex.getMessage()));
             }));
     btns.addComponent(new Label("  "));
-    btns.addComponent(new Button("Cancel", dlg::close));
+    btns.addComponent(new Button("Cancel [Esc]", dlg::close));
+    btns.addComponent(new Label("  "));
     panel.addComponent(btns);
+    panel.addComponent(
+        new com.googlecode.lanterna.gui2.EmptySpace(
+            new com.googlecode.lanterna.TerminalSize(1, 1)));
 
-    dlg.setComponent(panel);
-    addEscapeToClose(dlg);
-    gui.addWindow(dlg);
-    gui.setActiveWindow(dlg);
+    openStyledDialog(dlg, "Extend Lock: " + secret.getName(), panel);
   }
 
   // ── Delete confirmation (Screen 6) ────────────────────────────────────────
 
   private void showDeleteConfirmation(Secret secret, BasicWindow detailWin) {
-    MessageDialogButton result =
-        MessageDialog.showMessageDialog(
-            gui,
-            "Delete secret?",
-            "This will permanently delete \""
-                + secret.getName()
-                + "\" and its vault files. This cannot be undone.",
-            MessageDialogButton.OK,
-            MessageDialogButton.Cancel);
-    if (result == MessageDialogButton.OK) {
+    BasicWindow dlg = styledDialog();
+
+    boolean[] confirmed = {false};
+
+    Panel panel = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.VERTICAL));
+    panel.addComponent(
+        new com.googlecode.lanterna.gui2.EmptySpace(
+            new com.googlecode.lanterna.TerminalSize(54, 1)));
+    panel.addComponent(new Label("  This will permanently delete \"" + secret.getName() + "\"  "));
+    panel.addComponent(new Label("  and its vault files. This cannot be undone.  "));
+    panel.addComponent(
+        new com.googlecode.lanterna.gui2.EmptySpace(
+            new com.googlecode.lanterna.TerminalSize(1, 1)));
+
+    Panel btns = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.HORIZONTAL));
+    btns.addComponent(new Label("  "));
+    btns.addComponent(
+        new Button(
+            "(Y) Delete",
+            () -> {
+              confirmed[0] = true;
+              dlg.close();
+            }));
+    btns.addComponent(new Label("  "));
+    btns.addComponent(new Button("Cancel [Esc]", dlg::close));
+    btns.addComponent(new Label("  "));
+    panel.addComponent(btns);
+    panel.addComponent(
+        new com.googlecode.lanterna.gui2.EmptySpace(
+            new com.googlecode.lanterna.TerminalSize(1, 1)));
+
+    dlg.addWindowListener(
+        new WindowListenerAdapter() {
+          @Override
+          public void onUnhandledInput(Window src, KeyStroke keyStroke, AtomicBoolean consumed) {
+            if (keyStroke.getCharacter() != null
+                && Character.toLowerCase(keyStroke.getCharacter()) == 'y') {
+              confirmed[0] = true;
+              consumed.set(true);
+              dlg.close();
+            }
+          }
+        });
+
+    openStyledDialog(dlg, "Delete " + secret.getName() + "?", panel);
+    gui.waitForWindowToClose(dlg);
+
+    if (confirmed[0]) {
       runWithLoading(
           "Deleting from GitHub...",
           () -> vaultManager.delete(secret),
@@ -484,37 +540,42 @@ public class TimeSafeTui {
   // ── Setup dialog (Screen 7) ───────────────────────────────────────────────
 
   private void showSetupDialog() {
-    BasicWindow dlg = new BasicWindow("Setup");
-    dlg.setHints(Set.of(Window.Hint.CENTERED));
+    BasicWindow dlg = styledDialog();
 
     Panel panel = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.VERTICAL));
+    panel.addComponent(
+        new com.googlecode.lanterna.gui2.EmptySpace(
+            new com.googlecode.lanterna.TerminalSize(1, 1)));
 
     Panel fields = new Panel(new GridLayout(2));
-    fields.addComponent(new Label("GitHub PAT:"));
+    fields.addComponent(new Label("  GitHub PAT:               "));
     TextBox patBox = new TextBox(new com.googlecode.lanterna.TerminalSize(40, 1));
     fields.addComponent(patBox);
 
-    fields.addComponent(new Label("Vault repo (owner/repo):"));
+    fields.addComponent(new Label("  Vault repo (owner/repo):  "));
     TextBox repoBox = new TextBox(new com.googlecode.lanterna.TerminalSize(40, 1));
     fields.addComponent(repoBox);
 
-    fields.addComponent(new Label("Vault Gmail:"));
+    fields.addComponent(new Label("  Vault Gmail:              "));
     TextBox gmailBox = new TextBox(new com.googlecode.lanterna.TerminalSize(40, 1));
     fields.addComponent(gmailBox);
 
-    fields.addComponent(new Label("Gmail App Password:"));
+    fields.addComponent(new Label("  Gmail App Password:       "));
     TextBox gmailPassBox =
         new TextBox(new com.googlecode.lanterna.TerminalSize(40, 1)).setMask('*');
     fields.addComponent(gmailPassBox);
 
-    fields.addComponent(new Label("Delivery email:"));
+    fields.addComponent(new Label("  Delivery email:           "));
     TextBox deliveryBox = new TextBox(new com.googlecode.lanterna.TerminalSize(40, 1));
     fields.addComponent(deliveryBox);
 
     panel.addComponent(fields);
-    panel.addComponent(new Label(""));
+    panel.addComponent(
+        new com.googlecode.lanterna.gui2.EmptySpace(
+            new com.googlecode.lanterna.TerminalSize(1, 1)));
 
     Panel btns = new Panel(new LinearLayout(com.googlecode.lanterna.gui2.Direction.HORIZONTAL));
+    btns.addComponent(new Label("  "));
     btns.addComponent(
         new Button(
             "Save & Initialize",
@@ -574,13 +635,14 @@ public class TimeSafeTui {
                   });
             }));
     btns.addComponent(new Label("  "));
-    btns.addComponent(new Button("Cancel", dlg::close));
+    btns.addComponent(new Button("Cancel [Esc]", dlg::close));
+    btns.addComponent(new Label("  "));
     panel.addComponent(btns);
+    panel.addComponent(
+        new com.googlecode.lanterna.gui2.EmptySpace(
+            new com.googlecode.lanterna.TerminalSize(1, 1)));
 
-    dlg.setComponent(panel);
-    addEscapeToClose(dlg);
-    gui.addWindow(dlg);
-    gui.setActiveWindow(dlg);
+    openStyledDialog(dlg, "Setup", panel);
   }
 
   // ── Loading window helper ─────────────────────────────────────────────────
@@ -617,6 +679,22 @@ public class TimeSafeTui {
           /* swallow — already handled above */
         });
     worker.start();
+  }
+
+  // ── Dialog style helpers ──────────────────────────────────────────────────
+
+  private BasicWindow styledDialog() {
+    BasicWindow dlg = new BasicWindow();
+    dlg.setHints(Set.of(Window.Hint.CENTERED, Window.Hint.NO_DECORATIONS));
+    return dlg;
+  }
+
+  private void openStyledDialog(BasicWindow dlg, String title, Panel panel) {
+    dlg.setComponent(
+        panel.withBorder(com.googlecode.lanterna.gui2.Borders.singleLine(" " + title + " ")));
+    addEscapeToClose(dlg);
+    gui.addWindow(dlg);
+    gui.setActiveWindow(dlg);
   }
 
   // ── Keyboard shortcut helpers ─────────────────────────────────────────────
