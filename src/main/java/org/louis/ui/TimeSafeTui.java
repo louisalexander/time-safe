@@ -65,10 +65,9 @@ public class TimeSafeTui implements NavigationController {
     screen = new TerminalScreen(terminal);
     screen.startScreen();
 
-    gui = new MultiWindowTextGUI(
-        screen,
-        new DefaultWindowManager(),
-        new EmptySpace(TextColor.ANSI.BLACK));
+    gui =
+        new MultiWindowTextGUI(
+            screen, new DefaultWindowManager(), new EmptySpace(TextColor.ANSI.BLACK));
 
     try {
       config = Config.load();
@@ -80,7 +79,8 @@ public class TimeSafeTui implements NavigationController {
 
     mainWindow = new BasicWindow("TimeSafe");
     mainWindow.setHints(
-        Set.of(Window.Hint.FULL_SCREEN, Window.Hint.NO_DECORATIONS, Window.Hint.FIT_TERMINAL_WINDOW));
+        Set.of(
+            Window.Hint.FULL_SCREEN, Window.Hint.NO_DECORATIONS, Window.Hint.FIT_TERMINAL_WINDOW));
 
     secretsListPanel = new SecretsListPanel(this);
     currentPanel = secretsListPanel.build();
@@ -173,25 +173,32 @@ public class TimeSafeTui implements NavigationController {
       Consumer<Exception> onError) {
     BasicWindow loadingWin = new BasicWindow();
     loadingWin.setHints(Set.of(Window.Hint.CENTERED, Window.Hint.MODAL));
-    loadingWin.setComponent(Panels.vertical(
-        new com.googlecode.lanterna.gui2.Label(loadingMessage),
-        new com.googlecode.lanterna.gui2.Label("Please wait…")));
+    loadingWin.setComponent(
+        Panels.vertical(
+            new com.googlecode.lanterna.gui2.Label(loadingMessage),
+            new com.googlecode.lanterna.gui2.Label("Please wait…")));
     gui.addWindow(loadingWin);
 
-    Thread worker = new Thread(() -> {
-      try {
-        action.run();
-        gui.getGUIThread().invokeLater(() -> {
-          loadingWin.close();
-          onSuccess.run();
-        });
-      } catch (Exception e) {
-        gui.getGUIThread().invokeLater(() -> {
-          loadingWin.close();
-          onError.accept(e);
-        });
-      }
-    });
+    Thread worker =
+        new Thread(
+            () -> {
+              try {
+                action.run();
+                gui.getGUIThread()
+                    .invokeLater(
+                        () -> {
+                          loadingWin.close();
+                          onSuccess.run();
+                        });
+              } catch (Exception e) {
+                gui.getGUIThread()
+                    .invokeLater(
+                        () -> {
+                          loadingWin.close();
+                          onError.accept(e);
+                        });
+              }
+            });
     worker.setDaemon(true);
     worker.start();
   }
@@ -204,25 +211,32 @@ public class TimeSafeTui implements NavigationController {
       Consumer<Exception> onError) {
     BasicWindow loadingWin = new BasicWindow();
     loadingWin.setHints(Set.of(Window.Hint.CENTERED, Window.Hint.MODAL));
-    loadingWin.setComponent(Panels.vertical(
-        new com.googlecode.lanterna.gui2.Label(loadingMessage),
-        new com.googlecode.lanterna.gui2.Label("Please wait…")));
+    loadingWin.setComponent(
+        Panels.vertical(
+            new com.googlecode.lanterna.gui2.Label(loadingMessage),
+            new com.googlecode.lanterna.gui2.Label("Please wait…")));
     gui.addWindow(loadingWin);
 
-    Thread worker = new Thread(() -> {
-      try {
-        T result = action.get();
-        gui.getGUIThread().invokeLater(() -> {
-          loadingWin.close();
-          onSuccess.accept(result);
-        });
-      } catch (Exception e) {
-        gui.getGUIThread().invokeLater(() -> {
-          loadingWin.close();
-          onError.accept(e);
-        });
-      }
-    });
+    Thread worker =
+        new Thread(
+            () -> {
+              try {
+                T result = action.get();
+                gui.getGUIThread()
+                    .invokeLater(
+                        () -> {
+                          loadingWin.close();
+                          onSuccess.accept(result);
+                        });
+              } catch (Exception e) {
+                gui.getGUIThread()
+                    .invokeLater(
+                        () -> {
+                          loadingWin.close();
+                          onError.accept(e);
+                        });
+              }
+            });
     worker.setDaemon(true);
     worker.start();
   }
@@ -230,21 +244,23 @@ public class TimeSafeTui implements NavigationController {
   // ── Countdown timer ──────────────────────────────────────────────────────────
 
   private void startCountdownTimer() {
-    Thread t = new Thread(() -> {
-      while (!stopRefresh) {
-        try {
-          Thread.sleep(1000);
-        } catch (InterruptedException e) {
-          break;
-        }
-        if (stopRefresh) break;
-        try {
-          gui.getGUIThread().invokeLater(secretsListPanel::refreshTimes);
-        } catch (Exception e) {
-          break;
-        }
-      }
-    });
+    Thread t =
+        new Thread(
+            () -> {
+              while (!stopRefresh) {
+                try {
+                  Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                  break;
+                }
+                if (stopRefresh) break;
+                try {
+                  gui.getGUIThread().invokeLater(secretsListPanel::refreshTimes);
+                } catch (Exception e) {
+                  break;
+                }
+              }
+            });
     t.setDaemon(true);
     t.start();
   }

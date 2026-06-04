@@ -47,11 +47,12 @@ public class SecretDetailPanel {
     panel.addComponent(UiComponents.spacer());
 
     // Metadata fields
-    panel.addComponent(UiComponents.fieldRow("created", UiComponents.formatDate(secret.getCreatedAt())));
-    panel.addComponent(UiComponents.fieldRow("unlocked", UiComponents.formatDate(secret.getDecryptionDate())));
-    String shortId = secret.getId().length() > 8
-        ? secret.getId().substring(0, 8) + "…"
-        : secret.getId();
+    panel.addComponent(
+        UiComponents.fieldRow("created", UiComponents.formatDate(secret.getCreatedAt())));
+    panel.addComponent(
+        UiComponents.fieldRow("unlocked", UiComponents.formatDate(secret.getDecryptionDate())));
+    String shortId =
+        secret.getId().length() > 8 ? secret.getId().substring(0, 8) + "…" : secret.getId();
     panel.addComponent(UiComponents.fieldRow("id", shortId));
 
     panel.addComponent(UiComponents.spacer());
@@ -104,7 +105,8 @@ public class SecretDetailPanel {
             if (secret.availableForDecryption()) {
               new DecryptPanel(nav, secret).show();
             } else {
-              errorLine.setText("Not unlocked until " + UiComponents.formatDate(secret.getDecryptionDate()));
+              errorLine.setText(
+                  "Not unlocked until " + UiComponents.formatDate(secret.getDecryptionDate()));
               errorLine.setForegroundColor(UiColors.RED);
             }
             break;
@@ -124,8 +126,9 @@ public class SecretDetailPanel {
   }
 
   private String formatCountdown() {
-    long total = java.time.temporal.ChronoUnit.SECONDS.between(
-        java.time.Instant.now(), secret.getDecryptionDate());
+    long total =
+        java.time.temporal.ChronoUnit.SECONDS.between(
+            java.time.Instant.now(), secret.getDecryptionDate());
     if (total <= 0) return "ready";
     long days = total / 86400;
     long hours = (total % 86400) / 3600;

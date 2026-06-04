@@ -36,8 +36,7 @@ public class DeletePanel {
     panel.addComponent(heading);
     panel.addComponent(UiComponents.spacer());
 
-    panel.addComponent(
-        UiComponents.dimLabel("This will remove the encrypted file, metadata,"));
+    panel.addComponent(UiComponents.dimLabel("This will remove the encrypted file, metadata,"));
     panel.addComponent(
         UiComponents.dimLabel("key, and GitHub Actions workflow. Cannot be undone."));
     panel.addComponent(UiComponents.spacer());

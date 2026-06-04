@@ -5,7 +5,6 @@ import com.googlecode.lanterna.TextColor;
 import com.googlecode.lanterna.gui2.ActionListBox;
 import com.googlecode.lanterna.gui2.ComponentRenderer;
 import com.googlecode.lanterna.gui2.Direction;
-import com.googlecode.lanterna.gui2.EmptySpace;
 import com.googlecode.lanterna.gui2.Label;
 import com.googlecode.lanterna.gui2.LinearLayout;
 import com.googlecode.lanterna.gui2.Panel;
@@ -14,7 +13,6 @@ import com.googlecode.lanterna.gui2.Window;
 import com.googlecode.lanterna.gui2.WindowListener;
 import com.googlecode.lanterna.gui2.WindowListenerAdapter;
 import com.googlecode.lanterna.input.KeyStroke;
-import com.googlecode.lanterna.input.KeyType;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -38,8 +36,7 @@ public class SecretsListPanel {
   public Panel build() {
     panel = new Panel(new LinearLayout(Direction.VERTICAL));
 
-    String repo =
-        nav.config() != null ? "Secrets — " + nav.config().githubRepo : "Secrets";
+    String repo = nav.config() != null ? "Secrets — " + nav.config().githubRepo : "Secrets";
     panel.addComponent(UiComponents.sectionLabel(repo));
     panel.addComponent(UiComponents.spacer());
 
@@ -81,9 +78,8 @@ public class SecretsListPanel {
   }
 
   /**
-   * Called by the countdown timer every second. Updates the displayed time
-   * without rebuilding the whole panel — just clears and re-adds items,
-   * preserving selection.
+   * Called by the countdown timer every second. Updates the displayed time without rebuilding the
+   * whole panel — just clears and re-adds items, preserving selection.
    */
   public void refreshTimes() {
     if (listBox == null || cachedSecrets.isEmpty()) return;
@@ -177,8 +173,7 @@ public class SecretsListPanel {
             statusText = "● ready";
             statusColor = UiColors.GREEN;
           } else {
-            long secs =
-                ChronoUnit.SECONDS.between(Instant.now(), s.getDecryptionDate());
+            long secs = ChronoUnit.SECONDS.between(Instant.now(), s.getDecryptionDate());
             statusText = formatTimeRemaining(s.getDecryptionDate());
             statusColor = secs < 86400L ? UiColors.ORANGE : UiColors.DIM;
           }

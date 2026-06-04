@@ -84,9 +84,7 @@ public class ExtendLockPanel {
   }
 
   private String computePreview(int days) {
-    Instant base = secret.availableForDecryption()
-        ? Instant.now()
-        : secret.getDecryptionDate();
+    Instant base = secret.availableForDecryption() ? Instant.now() : secret.getDecryptionDate();
     return UiComponents.formatDate(base.plus(days, ChronoUnit.DAYS));
   }
 

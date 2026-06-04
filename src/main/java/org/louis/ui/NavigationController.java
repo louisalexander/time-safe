@@ -27,19 +27,16 @@ public interface NavigationController {
   Config config();
 
   /**
-   * Persist a new config and optionally reinitialise the GitHub vault.
-   * Calls initRepo() on GitHub only when reinitVault is true.
-   * Calls onSuccess on the GUI thread after completion, or onError on failure.
+   * Persist a new config and optionally reinitialise the GitHub vault. Calls initRepo() on GitHub
+   * only when reinitVault is true. Calls onSuccess on the GUI thread after completion, or onError
+   * on failure.
    */
   void applyConfig(
-      Config newConfig,
-      boolean reinitVault,
-      Runnable onSuccess,
-      Consumer<Exception> onError);
+      Config newConfig, boolean reinitVault, Runnable onSuccess, Consumer<Exception> onError);
 
   /**
-   * Run a blocking action on a background thread, show a loading message,
-   * then call onSuccess or onError on the GUI thread.
+   * Run a blocking action on a background thread, show a loading message, then call onSuccess or
+   * onError on the GUI thread.
    */
   void runAsync(
       String loadingMessage,
@@ -47,7 +44,9 @@ public interface NavigationController {
       Runnable onSuccess,
       Consumer<Exception> onError);
 
-  /** Run a background action that produces a value, then call onSuccess or onError on GUI thread. */
+  /**
+   * Run a background action that produces a value, then call onSuccess or onError on GUI thread.
+   */
   <T> void runAsync(
       String loadingMessage,
       ThrowingSupplier<T> action,
@@ -55,8 +54,8 @@ public interface NavigationController {
       java.util.function.Consumer<Exception> onError);
 
   /**
-   * Show a transient status message on the secrets list (green or red).
-   * Call after popToRoot() so the message appears on the refreshed list.
+   * Show a transient status message on the secrets list (green or red). Call after popToRoot() so
+   * the message appears on the refreshed list.
    */
   void showRootStatus(String message, boolean isError);
 

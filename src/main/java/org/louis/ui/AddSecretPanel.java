@@ -83,8 +83,11 @@ public class AddSecretPanel {
     TextBox daysBox = UiComponents.singleLineInput(10);
     if (savedDays > 0) daysBox.setText(String.valueOf(savedDays));
 
-    Label previewLabel = new Label(
-        savedDays > 0 ? "Unlocks on " + UiComponents.previewUnlockDate(savedDays) : "Unlocks on —");
+    Label previewLabel =
+        new Label(
+            savedDays > 0
+                ? "Unlocks on " + UiComponents.previewUnlockDate(savedDays)
+                : "Unlocks on —");
     previewLabel.setForegroundColor(UiColors.DIM);
     Label errorLine = new Label("");
     errorLine.setForegroundColor(UiColors.RED);
@@ -119,34 +122,39 @@ public class AddSecretPanel {
             step3Panel.addComponent(UiComponents.spacer());
             step3Panel.addComponent(UiComponents.dimLabel("Ctrl+Enter save   Esc back"));
 
-            WindowListenerAdapter step3Listener = new WindowListenerAdapter() {
-              @Override
-              public void onUnhandledInput(Window w, KeyStroke k, AtomicBoolean consumed) {
-                if (k.getKeyType() == KeyType.Escape) {
-                  consumed.set(true);
-                  nav.pop();
-                  return;
-                }
-                // Ctrl+Enter
-                if (k.isCtrlDown() && k.getKeyType() == KeyType.Enter) {
-                  consumed.set(true);
-                  String text = secretBox.getText().trim();
-                  if (text.isEmpty()) {
-                    errorLine3.setText("Secret text must not be empty.");
-                    return;
+            WindowListenerAdapter step3Listener =
+                new WindowListenerAdapter() {
+                  @Override
+                  public void onUnhandledInput(Window w, KeyStroke k, AtomicBoolean consumed) {
+                    if (k.getKeyType() == KeyType.Escape) {
+                      consumed.set(true);
+                      nav.pop();
+                      return;
+                    }
+                    // Ctrl+Enter
+                    if (k.isCtrlDown() && k.getKeyType() == KeyType.Enter) {
+                      consumed.set(true);
+                      String text = secretBox.getText().trim();
+                      if (text.isEmpty()) {
+                        errorLine3.setText("Secret text must not be empty.");
+                        return;
+                      }
+                      nav.runAsync(
+                          "Encrypting and pushing to GitHub…",
+                          () -> nav.vault().putSecret(savedDays, text, savedName),
+                          () -> {
+                            nav.popToRoot();
+                            nav.showRootStatus(
+                                "✓ "
+                                    + savedName
+                                    + " locked until "
+                                    + UiComponents.previewUnlockDate(savedDays),
+                                false);
+                          },
+                          ex -> errorLine3.setText("✗ " + ex.getMessage()));
+                    }
                   }
-                  nav.runAsync(
-                      "Encrypting and pushing to GitHub…",
-                      () -> nav.vault().putSecret(savedDays, text, savedName),
-                      () -> {
-                        nav.popToRoot();
-                        nav.showRootStatus("✓ " + savedName + " locked until "
-                            + UiComponents.previewUnlockDate(savedDays), false);
-                      },
-                      ex -> errorLine3.setText("✗ " + ex.getMessage()));
-                }
-              }
-            };
+                };
 
             nav.push(step3Panel, step3Listener);
             return false;

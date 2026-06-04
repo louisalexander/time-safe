@@ -99,8 +99,11 @@ public class SetupPanel {
     String smtpUser = smtpUserBox.getText().trim();
     String smtpPass = smtpPassBox.getText().trim();
 
-    if (pat.isEmpty() || repo.isEmpty() || delivery.isEmpty()
-        || smtpUser.isEmpty() || smtpPass.isEmpty()) {
+    if (pat.isEmpty()
+        || repo.isEmpty()
+        || delivery.isEmpty()
+        || smtpUser.isEmpty()
+        || smtpPass.isEmpty()) {
       errorLine.setText("All fields are required.");
       return;
     }
@@ -112,8 +115,7 @@ public class SetupPanel {
     newConfig.smtpUser = smtpUser;
     newConfig.smtpPass = smtpPass;
 
-    boolean isNewRepo = nav.config() == null
-        || !repo.equals(nav.config().githubRepo);
+    boolean isNewRepo = nav.config() == null || !repo.equals(nav.config().githubRepo);
 
     nav.applyConfig(
         newConfig,
