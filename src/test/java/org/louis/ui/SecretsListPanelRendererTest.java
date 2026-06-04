@@ -64,6 +64,16 @@ public class SecretsListPanelRendererTest {
   }
 
   @Test
+  public void rendererEnablesBoldForBrightColorRendering() throws IOException {
+    String renderer = extractRendererBlock(readSource());
+    // macOS Terminal (and many others) selects between "regular" and "bright" colour variants
+    // based on the bold attribute. Without BOLD, even RGB(255,255,255) renders as a muted hue.
+    assertTrue(
+        "Renderer must enable SGR.BOLD so terminal colours render at full brightness",
+        renderer.contains("enableModifiers(SGR.BOLD)"));
+  }
+
+  @Test
   public void rendererNeverFallsBackToAnsiDefaultForeground() throws IOException {
     // Setting foreground to ANSI.DEFAULT tells the terminal "use your default foreground", which
     // renders as a muted hue on tinted themes — the source of the user's "dim" complaint.

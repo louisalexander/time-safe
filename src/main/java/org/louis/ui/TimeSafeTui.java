@@ -1,5 +1,6 @@
 package org.louis.ui;
 
+import com.googlecode.lanterna.SGR;
 import com.googlecode.lanterna.TextColor;
 import com.googlecode.lanterna.graphics.SimpleTheme;
 import com.googlecode.lanterna.gui2.BasicWindow;
@@ -70,20 +71,13 @@ public class TimeSafeTui implements NavigationController {
     gui =
         new MultiWindowTextGUI(
             screen, new DefaultWindowManager(), new EmptySpace(TextColor.ANSI.DEFAULT));
-    // Theme: explicit BRIGHT foreground everywhere (no terminal-default greys), terminal-default
-    // background so the user's theme shows through. ANSI.DEFAULT for foreground tells the terminal
-    // "use your default foreground" — which on a tinted theme can render as a muted hue, the
-    // source of the "dimming" the user reported.
-    gui.setTheme(
-        SimpleTheme.makeTheme(
-            false,
-            UiColors.BRIGHT,
-            TextColor.ANSI.DEFAULT,
-            UiColors.BRIGHT,
-            TextColor.ANSI.DEFAULT,
-            UiColors.BRIGHT,
-            TextColor.ANSI.DEFAULT,
-            TextColor.ANSI.DEFAULT));
+    // Theme: explicit BRIGHT foreground + SGR.BOLD on every state, terminal-default background.
+    // BOLD is required because macOS Terminal (and many others) selects between "regular" and
+    // "bright" colour variants based on the bold attribute. Without it, even RGB(255,255,255)
+    // renders as a muted tone on tinted themes — the "dim" appearance the user reported.
+    // The SimpleTheme(fg, bg, styles...) constructor initialises *every* state (normal, preLight,
+    // selected, active, insensitive) to the same style, so BOLD applies uniformly.
+    gui.setTheme(new SimpleTheme(UiColors.BRIGHT, TextColor.ANSI.DEFAULT, SGR.BOLD));
 
     try {
       config = Config.load();

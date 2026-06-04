@@ -1,5 +1,6 @@
 package org.louis.ui;
 
+import com.googlecode.lanterna.SGR;
 import com.googlecode.lanterna.TerminalPosition;
 import com.googlecode.lanterna.TerminalSize;
 import com.googlecode.lanterna.TextColor;
@@ -152,8 +153,11 @@ public class SecretsListPanel {
         int selectedIdx = component.getSelectedIndex();
 
         // Clear any SGR modifiers inherited from the parent component's theme — without this,
-        // an ambient bold/faint can leak in and tint the renderer's text.
+        // an ambient faint can leak in and tint the renderer's text. Then enable BOLD so the
+        // terminal selects its "bright" colour variants (macOS Terminal and friends gate
+        // bright rendering on the bold attribute).
         graphics.clearModifiers();
+        graphics.enableModifiers(SGR.BOLD);
         // Deliberately DO NOT call graphics.setBackgroundColor here.
         // The terminal's own background must show through, like Claude Code's CLI.
         // See SecretsListPanelRendererTest#rendererSourceNeverSetsBackgroundColor.
