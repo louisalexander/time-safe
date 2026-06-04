@@ -5,6 +5,7 @@ import com.googlecode.lanterna.gui2.Label;
 import com.googlecode.lanterna.gui2.LinearLayout;
 import com.googlecode.lanterna.gui2.Panel;
 import com.googlecode.lanterna.gui2.Window;
+import com.googlecode.lanterna.gui2.WindowListener;
 import com.googlecode.lanterna.gui2.WindowListenerAdapter;
 import com.googlecode.lanterna.input.KeyStroke;
 import com.googlecode.lanterna.input.KeyType;
