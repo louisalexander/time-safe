@@ -1,10 +1,11 @@
 package org.louis.ui;
 
+import com.googlecode.lanterna.TerminalPosition;
 import com.googlecode.lanterna.TerminalSize;
 import com.googlecode.lanterna.TextColor;
 import com.googlecode.lanterna.gui2.ActionListBox;
-import com.googlecode.lanterna.gui2.ComponentRenderer;
 import com.googlecode.lanterna.gui2.Direction;
+import com.googlecode.lanterna.gui2.InteractableRenderer;
 import com.googlecode.lanterna.gui2.Label;
 import com.googlecode.lanterna.gui2.LinearLayout;
 import com.googlecode.lanterna.gui2.Panel;
@@ -130,12 +131,18 @@ public class SecretsListPanel {
     new SecretDetailPanel(nav, s).show();
   }
 
-  private ComponentRenderer<ActionListBox> buildListRenderer() {
+  private InteractableRenderer<ActionListBox> buildListRenderer() {
     List<Secret> secrets = cachedSecrets; // captured reference — same list mutated by refreshTimes
-    return new ComponentRenderer<ActionListBox>() {
+    return new InteractableRenderer<ActionListBox>() {
       @Override
       public TerminalSize getPreferredSize(ActionListBox component) {
         return new TerminalSize(70, Math.max(1, secrets.size()));
+      }
+
+      @Override
+      public TerminalPosition getCursorLocation(ActionListBox component) {
+        // No visible cursor — the colored "›" prefix indicates selection.
+        return null;
       }
 
       @Override
