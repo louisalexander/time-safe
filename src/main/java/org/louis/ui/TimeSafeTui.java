@@ -1,6 +1,7 @@
 package org.louis.ui;
 
 import com.googlecode.lanterna.TextColor;
+import com.googlecode.lanterna.graphics.SimpleTheme;
 import com.googlecode.lanterna.gui2.BasicWindow;
 import com.googlecode.lanterna.gui2.DefaultWindowManager;
 import com.googlecode.lanterna.gui2.EmptySpace;
@@ -68,7 +69,19 @@ public class TimeSafeTui implements NavigationController {
 
     gui =
         new MultiWindowTextGUI(
-            screen, new DefaultWindowManager(), new EmptySpace(TextColor.ANSI.BLACK));
+            screen, new DefaultWindowManager(), new EmptySpace(TextColor.ANSI.DEFAULT));
+    // Use a transparent theme so the terminal's own background shows through
+    // everywhere — no blue listbox / window backgrounds painted by the default theme.
+    gui.setTheme(
+        SimpleTheme.makeTheme(
+            false,
+            TextColor.ANSI.DEFAULT,
+            TextColor.ANSI.DEFAULT,
+            TextColor.ANSI.DEFAULT,
+            TextColor.ANSI.DEFAULT,
+            TextColor.ANSI.DEFAULT,
+            TextColor.ANSI.DEFAULT,
+            TextColor.ANSI.DEFAULT));
 
     try {
       config = Config.load();

@@ -151,8 +151,9 @@ public class SecretsListPanel {
         int cols = size.getColumns();
         int selectedIdx = component.getSelectedIndex();
 
-        // Clear the whole area with the terminal default — no background fills.
-        graphics.setBackgroundColor(TextColor.ANSI.DEFAULT);
+        // Deliberately DO NOT call graphics.setBackgroundColor here.
+        // The terminal's own background must show through, like Claude Code's CLI.
+        // See SecretsListPanelRendererTest#rendererSourceNeverSetsBackgroundColor.
         graphics.fill(' ');
 
         for (int row = 0; row < Math.min(secrets.size(), size.getRows()); row++) {
