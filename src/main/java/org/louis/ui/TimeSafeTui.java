@@ -385,7 +385,15 @@ public class TimeSafeTui {
             detailWin.close();
             rebuildSecretsList();
           },
-          ex -> showError("Error", ex.getMessage()));
+          ex -> {
+            detailWin.close();
+            rebuildSecretsList();
+            showError(
+                "Partial Delete",
+                "Local secret removed, but GitHub cleanup failed:\n\n"
+                    + ex.getMessage()
+                    + "\n\nThe encrypted blob or workflow may still exist in the vault repo.");
+          });
     }
   }
 
