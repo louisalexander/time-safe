@@ -77,4 +77,17 @@ public class SecretTest {
     Secret loaded = Secret.loadMeta(dir(), s.getId());
     assertEquals(newDate.getEpochSecond(), loaded.getDecryptionDate().getEpochSecond());
   }
+
+  @Test
+  public void createdAtSurvivesRoundTrip() throws Exception {
+    byte[] iv = EncryptDecrypt.generateIV();
+    Secret s = new Secret("TestSecret", Instant.now().plus(7, ChronoUnit.DAYS), iv);
+    Instant before = Instant.now().minusSeconds(1);
+
+    s.saveMeta(dir());
+    Secret loaded = Secret.loadMeta(dir(), s.getId());
+
+    assertNotNull(loaded.getCreatedAt());
+    assertTrue(!loaded.getCreatedAt().isBefore(before));
+  }
 }

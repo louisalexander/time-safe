@@ -18,6 +18,7 @@ public class Secret {
   private String name;
   private String decryptionDateIso;
   private String ivBase64;
+  private String createdAtIso;
 
   private Secret() {} // for Gson
 
@@ -26,6 +27,7 @@ public class Secret {
     this.name = name;
     this.decryptionDateIso = decryptionDate.toString();
     this.ivBase64 = Base64.getEncoder().encodeToString(iv);
+    this.createdAtIso = Instant.now().toString();
   }
 
   public String getId() {
@@ -42,6 +44,10 @@ public class Secret {
 
   public byte[] getIv() {
     return Base64.getDecoder().decode(ivBase64);
+  }
+
+  public Instant getCreatedAt() {
+    return createdAtIso != null ? Instant.parse(createdAtIso) : getDecryptionDate();
   }
 
   public void setDecryptionDate(Instant newDate) {
