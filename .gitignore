@@ -207,3 +207,12 @@ FakesAssemblies/
 # Custom ignores
 gallery.xml
 project.lock.json
+
+# Python (timesafe rewrite)
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+dist/
+.DS_Store
