@@ -1,0 +1,25 @@
+/* Simplified palette: terminal default everywhere, except ready=green and delete=red. */
+
+Screen {
+    align: left top;
+}
+
+Vertical {
+    padding: 1 2;
+}
+
+Label.title {
+    text-style: bold;
+}
+
+.ready {
+    color: green;
+}
+
+.delete {
+    color: red;
+}
+
+Input, TextArea {
+    margin: 0 0 1 0;
+}
