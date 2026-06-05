@@ -10,8 +10,6 @@ from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Header, Input, Label
 
-from timesafe.config.registry import VaultRef
-from timesafe.github.client import GitHubClient
 from timesafe.screens.gmail_link import GmailLinkScreen
 from timesafe.vault.vault import Vault
 
@@ -72,7 +70,7 @@ class InitVaultScreen(Screen):
         error = self.query_one("#error", Label)
 
         def blocking() -> Vault:
-            vault = Vault(GitHubClient(repo, token))
+            vault = self.app.make_vault(repo, token)  # type: ignore[attr-defined]
             if vault.is_initialized():
                 raise RuntimeError(
                     "This vault is already initialized. Use 'Connect to existing vault'."
@@ -89,8 +87,11 @@ class InitVaultScreen(Screen):
             error.update(describe_github_error(exc))
             return
 
-        self.app.credentials.put(repo, token)  # type: ignore[attr-defined]
-        self.app.registry.add(VaultRef(name, repo))  # type: ignore[attr-defined]
-        self.app.registry.save()  # type: ignore[attr-defined]
+        try:
+            self.app.register_vault(name, repo, token)  # type: ignore[attr-defined]
+        except Exception as exc:  # noqa: BLE001
+            error.update(f"Vault created on GitHub, but saving it locally failed: {exc}")
+            return
+        self.notify(f"Vault {repo} created and saved")
         self.app.pop_screen()
         self.app.push_screen(GmailLinkScreen(vault, after_init=True))

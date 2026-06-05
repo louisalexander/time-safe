@@ -29,3 +29,11 @@ def test_remove_by_repo():
     r.add(VaultRef("a", "owner/repo"))
     r.remove("owner/repo")
     assert not r.contains("owner/repo")
+
+
+def test_save_with_no_arg_round_trips_to_loaded_path(tmp_path):
+    p = tmp_path / "vaults.json"
+    r = VaultRegistry.load(p)
+    r.add(VaultRef("x", "o/x"))
+    r.save()  # no path arg → must write back to the path it was loaded from
+    assert [v.repo for v in VaultRegistry.load(p).vaults] == ["o/x"]

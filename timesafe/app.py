@@ -35,5 +35,14 @@ class TimeSafeApp(App):
         if token is None:
             self.notify(f"No stored token for {ref.repo} — re-add the vault.", severity="error")
             return
-        vault = Vault(GitHubClient(ref.repo, token))
-        self.push_screen(SecretsListScreen(vault, ref))
+        self.push_screen(SecretsListScreen(self.make_vault(ref.repo, token), ref))
+
+    def make_vault(self, repo: str, token: str) -> Vault:
+        """Build a Vault for a repo+token. Overridable in tests to inject a fake."""
+        return Vault(GitHubClient(repo, token))
+
+    def register_vault(self, name: str, repo: str, token: str) -> None:
+        """Persist a vault: registry FIRST (durable on disk), then the token in the keychain."""
+        self.registry.add(VaultRef(name, repo))
+        self.registry.save()
+        self.credentials.put(repo, token)

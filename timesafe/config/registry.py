@@ -18,19 +18,21 @@ class VaultRef:
 class VaultRegistry:
     """The on-disk list of known vaults — the ONLY local persistence of vault state."""
 
-    def __init__(self, vaults: list[VaultRef]) -> None:
+    def __init__(self, vaults: list[VaultRef], path: Path = DEFAULT_PATH) -> None:
         self._vaults = vaults
+        self._path = Path(path)
 
     @classmethod
     def load(cls, path: Path = DEFAULT_PATH) -> "VaultRegistry":
         p = Path(path)
         if not p.exists():
-            return cls([])
+            return cls([], p)
         data = json.loads(p.read_text())
-        return cls([VaultRef(**item) for item in data])
+        return cls([VaultRef(**item) for item in data], p)
 
-    def save(self, path: Path = DEFAULT_PATH) -> None:
-        p = Path(path)
+    def save(self, path: Path | None = None) -> None:
+        # Default to the path this registry was loaded from, so save() always round-trips to load().
+        p = Path(path) if path is not None else self._path
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps([asdict(v) for v in self._vaults], indent=2))
 
