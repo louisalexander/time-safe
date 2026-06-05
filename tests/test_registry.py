@@ -37,3 +37,20 @@ def test_save_with_no_arg_round_trips_to_loaded_path(tmp_path):
     r.add(VaultRef("x", "o/x"))
     r.save()  # no path arg → must write back to the path it was loaded from
     assert [v.repo for v in VaultRegistry.load(p).vaults] == ["o/x"]
+
+
+def test_reload_merges_a_concurrent_instances_write(tmp_path):
+    # Two app instances sharing one vaults.json must not clobber each other.
+    p = tmp_path / "vaults.json"
+    a = VaultRegistry.load(p)
+    b = VaultRegistry.load(p)  # stale snapshot, like a second running instance
+
+    a.add(VaultRef("one", "o/one"))
+    a.save()
+
+    b.reload()  # before its own write, B re-reads disk
+    assert [v.repo for v in b.vaults] == ["o/one"]
+    b.add(VaultRef("two", "o/two"))
+    b.save()
+
+    assert [v.repo for v in VaultRegistry.load(p).vaults] == ["o/one", "o/two"]

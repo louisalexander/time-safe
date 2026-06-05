@@ -32,7 +32,7 @@ class VaultPickerScreen(Screen):
         await self._rebuild()
 
     async def _rebuild(self) -> None:
-        self._vaults = self.app.registry.vaults  # type: ignore[attr-defined]
+        self._vaults = self.app.registry.reload().vaults  # type: ignore[attr-defined]
         listview = self.query_one("#vaults", ListView)
         await listview.clear()
         empty = self.query_one("#empty", Label)
@@ -65,7 +65,9 @@ class VaultPickerScreen(Screen):
         if index is None or index >= len(self._vaults):
             self.app.bell()
             return
-        self.app.registry.remove(self._vaults[index].repo)  # type: ignore[attr-defined]
+        repo = self._vaults[index].repo
+        self.app.registry.reload()  # type: ignore[attr-defined]  # merge other instances first
+        self.app.registry.remove(repo)  # type: ignore[attr-defined]
         self.app.registry.save()  # type: ignore[attr-defined]
         await self._rebuild()
 

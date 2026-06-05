@@ -42,7 +42,8 @@ class TimeSafeApp(App):
         return Vault(GitHubClient(repo, token))
 
     def register_vault(self, name: str, repo: str, token: str) -> None:
-        """Persist a vault: registry FIRST (durable on disk), then the token in the keychain."""
+        """Persist a vault: reload+merge (resilient to other instances), save, then keychain."""
+        self.registry.reload()  # pick up anything another instance wrote
         self.registry.add(VaultRef(name, repo))
         self.registry.save()
         self.credentials.put(repo, token)

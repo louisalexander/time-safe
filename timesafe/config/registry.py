@@ -36,6 +36,14 @@ class VaultRegistry:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps([asdict(v) for v in self._vaults], indent=2))
 
+    def reload(self) -> "VaultRegistry":
+        """Re-read this registry's file from disk into memory (merges in other instances' writes)."""
+        if self._path.exists():
+            self._vaults = [VaultRef(**item) for item in json.loads(self._path.read_text())]
+        else:
+            self._vaults = []
+        return self
+
     @property
     def vaults(self) -> list[VaultRef]:
         return list(self._vaults)
