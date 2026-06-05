@@ -1,106 +1,44 @@
 # Security
 
-## Threat model
+## What the lock guarantees
 
-TimeSafe is designed for one specific adversary: **yourself in a weaker moment**.
+Confidentiality **before** the unlock time is **cryptographic**. Each secret is timelock-encrypted (drand/tlock) to a future round; the threshold-BLS signature that decrypts it does not exist until that wall-clock time. So before then:
 
-The goal is to protect access to sites you've chosen to avoid (e.g. gambling, porn, social media) during a period of self-imposed abstinence. The lock is meaningful because:
+- **You** can't read it early — there's no key to find, no bypass flow.
+- **GitHub** can't read it — the repo holds only ciphertext.
+- **Anyone who copies the repo** can't read it — same reason.
 
-- You made the decision to lock when you were clear-headed.
-- At the moment you most want access, there is no bypass path — not even one you forgot about.
+This is a real improvement over a "key sitting next to the ciphertext" design, where anyone with repo access could decrypt at any time.
 
-TimeSafe is **not** designed to protect secrets from an external adversary. It does not protect against:
+## Trust assumptions
 
-- A motivated attacker with access to your machine, vault repo, or Gmail account.
-- Nation-state actors.
-- Subpoenas or legal compulsion.
+- **drand threshold integrity.** Decryption depends on the drand "quicknet" network (a ~t-of-n threshold across independent operators, the League of Entropy). The lock holds as long as that threshold isn't compromised before the unlock time.
+- **drand liveness.** The round signature must eventually be published. drand is a robust, multi-organisation network built for exactly this; the chain hash is pinned per secret so decryption is reproducible. If quicknet ever permanently disappeared, affected secrets would become undecryptable. (A future option is to double-wrap with a key you control as outage insurance.)
 
-If your use case involves protecting secrets from someone else, use a purpose-built secrets manager (e.g. HashiCorp Vault, 1Password Secrets Automation).
+## After unlock
 
----
+Once a secret's round passes, its signature is public, so **anyone with read access to the vault repo can decrypt it.** Therefore:
 
-## Why there is no bypass
+- Keep the vault repo **private**. (time-safe should refuse to initialize a public repo.)
+- "Reveal" decrypts locally and never writes plaintext to disk.
 
-The lock chain is designed so that every bypass path leads back to the vault Gmail account:
+## The unlock time is immutable
 
-1. **The AES key is not stored locally.** It exists only in the private vault repo.
+A genuine time-lock can't be shortened or extended while locked — the ciphertext is cryptographically bound to its round, and you'd need the plaintext (which you can't read yet) to re-encrypt. **Renew** therefore only works on a secret that's already **ready**: it reveals and re-encrypts to a new round.
 
-2. **The vault repo requires the vault Gmail.** GitHub account recovery goes to the recovery email — which is the vault Gmail itself (or is absent). There is no secondary recovery path.
+## Credentials
 
-3. **The vault Gmail password is locked in TimeSafe.** To access the vault Gmail, you need the vault Gmail password. That password is itself a locked secret.
+- **GitHub PAT** — stored in your OS keychain (`keyring`), never in a plaintext file. Use a fine-grained token scoped to the vault repo; rotate if exposed.
+- **Gmail OAuth** (only if you use email delivery) — the refresh token and client secret are stored **only** as GitHub Actions secrets in the vault repo (written via a libsodium sealed box), never locally. A revoked token surfaces as a GitHub issue prompting you to re-link.
 
-4. **The vault Gmail has no recovery options.** No recovery email. No recovery phone. Removing these is a required setup step (see [Getting Started](getting-started.md)).
+## Email delivery carries plaintext
 
-5. **Physical backup codes are the only emergency path.** If you truly need emergency access, the backup codes (stored physically) can get you into the vault Gmail. But this requires physical access to the backup codes — which you (ideally) stored somewhere deliberately inconvenient.
+The optional "Email it" path sends the **decrypted secret** to the delivery address via Gmail at/after the unlock time. If you'd rather plaintext never traverse email, use local **Reveal** instead (the default), which keeps it on your machine.
 
-The recursive structure means breaking the lock early requires physically retrieving backup codes from storage. That friction is the point.
+## Out of scope
 
----
+- Malware on your machine (a keylogger/memory scraper could capture plaintext at reveal time).
+- Compromise of the delivery email account (if you use email delivery).
+- A determined attacker who already has read access to a vault repo *after* its secrets unlock.
 
-## AES/CBC trade-off
-
-TimeSafe uses **AES/CBC/PKCS5Padding** without a message authentication code (MAC). This means the ciphertext is **not authenticated**.
-
-Without a MAC, an attacker with write access to the local `.enc` files could perform a bit-flipping attack to corrupt or manipulate the decrypted output. The attacker would not learn the plaintext, but could produce garbage or partially controlled output.
-
-This is an accepted trade-off for this threat model:
-
-- The threat is self-restraint, not adversarial tampering.
-- The lock guarantee comes from key inaccessibility (stored remotely, delivered by schedule), not from cipher authentication.
-- AES/GCM (which provides authentication) requires a unique nonce per encryption and adds implementation complexity for marginal security gain in this context.
-
-The SpotBugs/FindSecBugs `CIPHER_INTEGRITY` finding for this is suppressed in the build configuration with this justification documented inline.
-
----
-
-## Key strength
-
-- **AES key**: 256-bit, generated with `java.security.SecureRandom`. This is cryptographically strong random — not `java.util.Random`.
-- **IV**: 128-bit, generated with `java.security.SecureRandom` per secret. A fresh IV per secret ensures that two secrets with the same plaintext produce different ciphertext.
-
-The FindSecBugs `DMI_RANDOM_USED_ONLY_ONCE` finding is a false positive on `SecureRandom` — it is intended to be used once per encryption operation.
-
----
-
-## GitHub as key store
-
-The vault repo is a private GitHub repository. Access requires either:
-
-- A GitHub account with repo access (login → vault Gmail), OR
-- A GitHub PAT with `repo` scope for that repo
-
-**PAT compromise**: If the PAT stored in `~/.timesafe/config.json` is compromised, an attacker could read the key files from the vault repo and decrypt your secrets. Mitigation:
-
-- Use a fine-grained PAT scoped to only the vault repo.
-- Protect `~/.timesafe/config.json` with `chmod 600`.
-- Rotate the PAT periodically.
-
-**GitHub outage**: If GitHub is unavailable on the scheduled unlock date, the Actions workflow will not run. The `workflow_dispatch` trigger allows manual re-run once GitHub is available — but only from within the vault repo interface, which requires vault Gmail access.
-
----
-
-## SpotBugs / FindSecBugs
-
-The build runs FindSecBugs static analysis on every `./gradlew check`. The following findings are suppressed with documented justifications:
-
-| Finding | Location | Justification |
-|---------|----------|--------------|
-| `CIPHER_INTEGRITY` | `EncryptDecrypt` | AES/CBC without HMAC is an accepted trade-off for this threat model (documented above) |
-| `DMI_RANDOM_USED_ONLY_ONCE` | Key/IV generation | False positive — `SecureRandom` is correctly used once per encryption operation |
-| `DM_DEFAULT_ENCODING` | Console `Scanner` | Terminal character encoding is intentional for the interactive console UI |
-
-All other SpotBugs findings must be clean for the build to pass.
-
----
-
-## What this does NOT protect against
-
-| Threat | Why it's out of scope |
-|--------|-----------------------|
-| Adversarial attack on the vault repo | The repo is private but not hardened against a determined attacker with a compromised PAT |
-| Physical access to backup codes | Backup codes are the designed emergency path; physical security is the user's responsibility |
-| Malware on the machine | Keyloggers or memory scrapers could capture the plaintext at the moment of decryption |
-| Account takeover of delivery email | The key email is sent to a delivery address; if that account is compromised, the key is exposed |
-| Social engineering GitHub support | GitHub support account recovery policies are outside TimeSafe's control |
-
-If you are protecting against any of these threats, TimeSafe is not the right tool for your use case.
+For protecting secrets from a third party (rather than from your future self / premature access), use a purpose-built secrets manager.

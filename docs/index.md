@@ -1,20 +1,28 @@
-# TimeSafe for Secrets
+# time-safe
 
-[![CI](https://github.com/louisalexander/time-safe/actions/workflows/ci.yml/badge.svg)](https://github.com/louisalexander/time-safe/actions/workflows/ci.yml)
-![Java](https://img.shields.io/badge/Java-21-orange?logo=openjdk)
-![Gradle](https://img.shields.io/badge/Gradle-8.8-02303A?logo=gradle)
+[![Python](https://img.shields.io/badge/python-3.12+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+![Textual](https://img.shields.io/badge/TUI-Textual-5A2CA0)
+![timelock](https://img.shields.io/badge/timelock-drand%2Ftlock-F46036)
 
-**Encrypt a password and time-lock it so that not even you can access it until the unlock date.**
+**Lock a secret until a future moment — so that *nobody*, not even you, can read it early.**
 
-TimeSafe is a console tool for locking passwords to sites you want to stay off. You encrypt a secret, choose a lock duration (e.g. 90 days), and the decryption key is delivered to you by email on the unlock date. Until then — even if you're desperate — the key does not exist anywhere you can reach it.
+time-safe timelock-encrypts your secrets, stores the ciphertext in a GitHub repo, and lets you reveal them only **after a date you choose**. The lock is enforced by cryptography — the [drand](https://drand.love) randomness beacon via [tlock](https://github.com/drand/tlock) — not by an honour system.
+
+![secrets list](screenshots/02-secrets-list.svg)
 
 ## Why it works
 
-The core insight: if the decryption key is never stored locally, and the only way to get it is an email sent by a scheduled job on a future date, then there is no bypass flow. You cannot "recover" the key early. You cannot reset the password on the locked site without access to the vault email — which you've also locked.
+Each secret is encrypted to a **future drand round**. The round's threshold signature — the only thing that can decrypt it — is not produced by the beacon network until that wall-clock time arrives. So there is **no key stored anywhere** and **no bypass**: you cannot "recover" it early, GitHub cannot read it, and copying the repo doesn't help. Once the time passes, the signature becomes public and the app decrypts locally, in memory.
 
 ## Quick links
 
-- [Architecture](architecture.md) — how the encryption and time-lock mechanism work
-- [Getting Started](getting-started.md) — setup guide
-- [Usage](usage.md) — CLI reference
-- [Security](security.md) — threat model and known trade-offs
+- [Getting Started](getting-started.md) — install, create a vault, add a secret
+- [Usage](usage.md) — screens and keys
+- [Architecture](architecture.md) — how the timelock + delivery work
+- [Security](security.md) — threat model and trade-offs
+
+## At a glance
+
+| Vaults | Secret (ready) | Add secret |
+|:---:|:---:|:---:|
+| ![](screenshots/01-vault-picker.svg) | ![](screenshots/03-secret-detail-ready.svg) | ![](screenshots/04-add-secret.svg) |

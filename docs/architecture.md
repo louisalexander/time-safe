@@ -2,129 +2,72 @@
 
 ## Overview
 
-TimeSafe separates the encrypted secret (stored locally) from the decryption key (stored remotely, delivered only on a future date). This physical separation is the foundation of the time-lock guarantee.
+time-safe stores only **timelock ciphertext** in a GitHub repo — there is no key anywhere. Decryption requires the [drand](https://drand.love) beacon's signature for a future round, which the network only publishes once that time arrives.
 
 ```mermaid
 flowchart TD
-    CLI["CLI (console)"]
-    VM["VaultManager"]
-    ED["EncryptDecrypt"]
-    GV["GitHubVault"]
-    REPO["Private GitHub Repo\n(vault keys + workflows)"]
-    GA["GitHub Actions\n(cron scheduler)"]
-    GMAIL["Gmail SMTP\n(vault account)"]
-    INBOX["User's inbox\n(delivery address)"]
+    APP["Textual app"]
+    REG["~/.timesafe/vaults.json\n(+ OS keychain for PATs)"]
+    TLE["tle (drand timelock CLI)"]
+    DRAND["drand quicknet beacon"]
+    REPO["GitHub vault repo\n(ciphertext + workflows)"]
+    GA["GitHub Actions\n(on-demand)"]
+    GMAIL["Gmail API\n(OAuth)"]
 
-    CLI --> VM
-    VM --> ED
-    VM --> GV
-    GV --> REPO
+    APP --> REG
+    APP -->|encrypt / reveal| TLE
+    TLE <-->|round signature| DRAND
+    APP -->|push .tle / dispatch| REPO
     REPO --> GA
-    GA --> GMAIL
-    GMAIL --> INBOX
+    GA -->|tle -d at T| GMAIL
 ```
 
-When a secret is locked:
+## Encryption (add)
 
-1. The CLI encrypts the secret locally with a fresh AES key.
-2. `GitHubVault` pushes the AES key (base64-encoded) to the private vault repo.
-3. `GitHubVault` pushes a GitHub Actions workflow YAML to the vault repo. The workflow is scheduled to run on the unlock date.
-4. On the unlock date, GitHub Actions runs the workflow, which emails the key to the delivery address.
-5. The user pastes the key into the CLI to decrypt the locally stored ciphertext.
+1. The app fetches drand `quicknet` info and maps the unlock time → a round number.
+2. `tle` timelock-encrypts the plaintext to that round.
+3. The ciphertext is pushed to `vault/secrets/<id>.tle`; metadata (`id`, `name`, `unlock_at`, `drand_round`, `drand_chain`, `created_at`, optional `delivery_email`) to `<id>.meta`; and a per-secret `workflow_dispatch` workflow to `.github/workflows/unlock-<id>.yml`.
 
-The key never touches the local filesystem.
+**No key file is created or stored.** The unlock time is encoded in the ciphertext, not in any retrievable secret.
 
----
+## Reveal (local)
 
-## Encryption
+Once `now ≥ unlock_at`, the app fetches `<id>.tle` and runs `tle -d`, which pulls the now-public round signature from drand and decrypts **in memory**. Before the round, `tle` reports "too early" and the app keeps counting down. Plaintext never touches disk.
 
-Each secret gets its own key and IV generated fresh at lock time:
+## Email delivery (optional)
 
-- **Key**: 256-bit random, generated with `java.security.SecureRandom`
-- **IV**: 128-bit random, generated with `java.security.SecureRandom`
-- **Algorithm**: AES/CBC/PKCS5Padding via Apache Commons Crypto
+"Email it" dispatches the per-secret workflow. The job installs `tle`, runs `vault/scripts/send_secret.py` which:
 
-The encrypted ciphertext is written to `<uuid>.enc` in the local working directory. The IV is stored in the secret's metadata file (`<uuid>.meta`) as a base64 string — the IV is not secret, but it must be the same at decryption time.
+1. `tle -d` the ciphertext (this *is* the server-side time gate — fails before T),
+2. exchanges the vault's Gmail **OAuth refresh token** (a repo Actions secret) for an access token,
+3. sends the plaintext via the Gmail API to the secret's delivery address.
 
-The AES key is **never written to disk locally**. It is immediately base64-encoded and pushed to the vault repo, then discarded from memory when the JVM process ends.
+On a revoked/expired token it exits non-zero and opens a "Gmail re-authorization required" issue.
 
----
+## Renew
 
-## Key storage
+A **ready** secret can be re-locked: the app decrypts it (possible now), encrypts the plaintext to a new future round, and overwrites the ciphertext/metadata/workflow. A still-locked secret cannot be renewed — it can't be read to re-encrypt.
 
-The AES key lives at `vault/keys/<uuid>.key` in the private GitHub vault repo. It is stored as a plain base64 string — the file itself is the sole copy of the key.
+## Module layout
 
-Access to this file requires:
+| Module | Responsibility |
+|---|---|
+| `config/registry.py` | `~/.timesafe/vaults.json` — the only local state (vault name + repo) |
+| `config/credentials.py` | GitHub PATs in the OS keychain via `keyring` |
+| `timelock/drand.py` | fetch beacon info; map a date → round |
+| `timelock/tle.py` | `encrypt` / `decrypt` via the `tle` binary; `NotYetUnlocked` |
+| `vault/secret.py` | the `Secret` model + `.meta` JSON |
+| `vault/workflow.py` | the unlock-workflow YAML + the `send_secret.py` delivery script |
+| `vault/vault.py` | orchestration: init, put, list, reveal, renew, delete, dispatch, relink |
+| `github/client.py` | thin httpx GitHub REST client |
+| `github/secrets_api.py` | PyNaCl sealed-box for writing Actions secrets |
+| `oauth/loopback_flow.py` | Gmail OAuth (loopback/installed-app, PKCE) |
+| `screens/` | Textual screens (picker, init/connect, gmail link, list, detail, add, reveal, renew) |
 
-1. A GitHub account with access to the vault repo, OR
-2. A GitHub PAT with `repo` scope for that repo
-
-The vault repo access is itself protected by the vault Gmail account (GitHub login recovery). The vault Gmail password is locked in TimeSafe. This creates the recursive lock: to break the lock early, you would need the vault Gmail password, which is itself locked.
-
----
-
-## Time-lock mechanism
-
-When a secret is created, `VaultManager` generates a GitHub Actions workflow YAML and pushes it to `.github/workflows/unlock-<name>.yml` in the vault repo.
-
-The workflow schedule is derived from the unlock date:
-
-```yaml
-on:
-  schedule:
-    - cron: '0 9 <day> <month> *'
-  workflow_dispatch:
-```
-
-The `workflow_dispatch` trigger allows manual re-run if the scheduled run fails (e.g. GitHub outage), but only from within the vault repo — which requires vault Gmail access.
-
-The workflow runs a Python script (`vault/scripts/send_key.py`) that:
-
-1. Reads `vault/keys/<uuid>.key` from the repo filesystem (it is checked out by the workflow).
-2. Connects to Gmail SMTP using credentials stored as GitHub Actions secrets in the vault repo.
-3. Sends an email containing the base64 key to the delivery address.
-
----
-
-## Decryption flow
-
-1. On the unlock date, the scheduled GitHub Actions workflow runs and emails the base64 AES key to the delivery address.
-2. The user opens the email and copies the key.
-3. The user runs the TimeSafe CLI, selects the secret (option `2`), then chooses `Decrypt` (option `2` in the submenu).
-4. The CLI prompts for the base64 key.
-5. The CLI fetches the `.meta` file from GitHub (via the GitHub Contents API) to read the IV.
-6. `EncryptDecrypt.decrypt()` is called with the decoded key, the decoded IV, and the ciphertext from the local `.enc` file.
-7. The plaintext secret is printed to the console.
-
----
-
-## Code structure
-
-| Class | Responsibility |
-|-------|---------------|
-| `Config` | Loads `~/.timesafe/config.json` — GitHub PAT, vault repo, Gmail credentials, delivery address |
-| `VaultManager` | Orchestrates put / get / delete / extend operations; calls `EncryptDecrypt` and `GitHubVault` |
-| `GitHubVault` | All GitHub API calls (push file, fetch file, delete file) via `java.net.http.HttpClient` and the GitHub Contents API |
-| `EncryptDecrypt` | Static `encrypt(key, iv, plaintext)` and `decrypt(key, iv, ciphertext)` methods using Apache Commons Crypto |
-| `Secret` | POJO: `id` (UUID), `name`, `decryptionDateIso` (ISO-8601 string), `ivBase64`. Serialized to/from JSON for the `.meta` file. |
-
-`Secret.availableForDecryption()` returns `true` when `Instant.now().isAfter(decryptionDate)`. The time-lock is enforced at read time in the CLI — the `.enc` file is always present on disk; only the key is gated.
-
----
-
-## Build & quality gates
-
-The Gradle wrapper (`./gradlew`) handles everything — no local Gradle install required.
+## Tests
 
 ```bash
-./gradlew check
+uv run pytest
 ```
 
-The `check` task runs in order:
-
-1. `compileJava` — Java 21 source compilation
-2. `test` — 17 JUnit 4 unit tests
-3. `spotlessCheck` — Google Java Format 1.17 enforced via Spotless
-4. `spotbugsMain` — FindSecBugs static analysis
-
-All four must pass for a green build. `spotlessApply` auto-formats sources to fix `spotlessCheck` failures.
+Pure logic (crypto round math, secret model, workflow strings, OAuth helpers, registry) is unit-tested; the GitHub client is tested against a mocked HTTP transport (`respx`); screens are exercised with Textual's `Pilot`. The live drand roundtrip is opt-in (`TIMESAFE_LIVE=1`).

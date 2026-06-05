@@ -30,7 +30,7 @@ from textual import work
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.screen import Screen
-from textual.widgets import Button, Footer, Header, Input, Label, TextArea
+from textual.widgets import Button, Footer, Header, Input, Label
 
 
 def is_valid_email(raw: str | None) -> bool:
@@ -64,7 +64,7 @@ class AddSecretScreen(Screen):
             yield Label("Delivery email (optional)")
             yield Input(id="email")
             yield Label("Secret text")
-            yield TextArea(id="text")
+            yield Input(password=True, id="text")
             yield Label("", id="error")
             yield Button("Save", id="save", variant="primary")
         yield Footer()
@@ -77,7 +77,7 @@ class AddSecretScreen(Screen):
         name = self.query_one("#name", Input).value.strip()
         duration_raw = self.query_one("#duration", Input).value.strip()
         email = self.query_one("#email", Input).value.strip()
-        text = self.query_one("#text", TextArea).text.strip()
+        text = self.query_one("#text", Input).value.strip()
         error = self.query_one("#error", Label)
         if not name or not text:
             error.update("Name and secret text are required.")
