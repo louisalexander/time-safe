@@ -83,6 +83,21 @@ def test_reveal_decrypts(faked):
     assert v.reveal(s) == "topsecret"
 
 
+def test_renew_decrypts_then_re_encrypts_to_new_time(faked):
+    gh = FakeGitHub()
+    v = Vault(gh)
+    s = v.put_secret("N", _future(), "topsecret", None)
+    new_unlock = datetime.now(timezone.utc) + timedelta(days=60)
+    v.renew(s, new_unlock)
+    assert s.unlock_at == new_unlock
+    # ciphertext was re-written (fake tlock is reversible 'CT:' prefix)
+    assert gh.files[f"{SECRETS_DIR}/{s.id}.tle"] == b"CT:topsecret"
+    import json
+
+    meta = json.loads(gh.files[f"{SECRETS_DIR}/{s.id}.meta"].decode())
+    assert meta["unlock_at"] == new_unlock.isoformat()
+
+
 def test_delete_removes_all_files(faked):
     gh = FakeGitHub()
     v = Vault(gh)

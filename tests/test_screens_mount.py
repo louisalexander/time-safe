@@ -9,6 +9,7 @@ from timesafe.screens.add_secret import AddSecretScreen
 from timesafe.screens.connect_vault import ConnectVaultScreen
 from timesafe.screens.gmail_link import GmailLinkScreen
 from timesafe.screens.init_vault import InitVaultScreen
+from timesafe.screens.renew import RenewScreen
 from timesafe.screens.reveal import RevealScreen
 from timesafe.screens.secret_detail import SecretDetailScreen
 from timesafe.screens.secrets_list import SecretsListScreen
@@ -27,6 +28,7 @@ async def test_every_screen_mounts_without_error():
     screens = [
         SecretsListScreen(FakeVault(), ref),
         SecretDetailScreen(FakeVault(), secret),
+        RenewScreen(FakeVault(), secret),
         RevealScreen("S", "the plaintext"),
         AddSecretScreen(FakeVault()),
         GmailLinkScreen(FakeVault()),

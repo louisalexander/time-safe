@@ -14,12 +14,13 @@ from timesafe.vault.secret import Secret
 
 
 def visible_actions(secret: Secret) -> list[str]:
-    """Action labels available for a secret. Reveal/Email only when ready; never Extend."""
+    """Action labels available for a secret. Reveal/Email/Renew only when ready."""
     actions: list[str] = []
     if secret.is_ready():
         actions.append("reveal")
         if secret.delivery_email:
             actions.append("email")
+        actions.append("renew")
     actions.append("delete")
     return actions
 
@@ -28,6 +29,7 @@ class SecretDetailScreen(Screen):
     BINDINGS = [
         ("d", "reveal", "reveal"),
         ("s", "email", "email"),
+        ("r", "renew", "renew"),
         ("x", "delete", "delete"),
         ("escape", "app.pop_screen", "back"),
     ]
@@ -51,11 +53,13 @@ class SecretDetailScreen(Screen):
             yield Label(f"round      {s.drand_round}")
             yield Label("")
             if "reveal" in actions:
-                yield Label("d  Reveal with key")
+                yield Label("d  Reveal")
             else:
                 yield Label("d  Reveal (locked)")
             if "email" in actions:
                 yield Label("s  Email it")
+            if "renew" in actions:
+                yield Label("r  Renew lock")
             delete = Label("x  Delete")
             delete.add_class("delete")
             yield delete
@@ -73,6 +77,14 @@ class SecretDetailScreen(Screen):
             self.app.bell()
             return
         self._do_email()
+
+    def action_renew(self) -> None:
+        if not self.secret.is_ready():
+            self.app.bell()
+            return
+        from timesafe.screens.renew import RenewScreen
+
+        self.app.push_screen(RenewScreen(self.vault, self.secret))
 
     def action_delete(self) -> None:
         self._do_delete()

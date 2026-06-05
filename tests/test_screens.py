@@ -19,22 +19,22 @@ def _secret(ready: bool, email="a@b.co"):
 
 
 # ── secret-detail gating ─────────────────────────────────────────────────────
-def test_locked_hides_reveal_and_email():
+def test_locked_hides_reveal_email_renew():
     actions = visible_actions(_secret(ready=False))
     assert "reveal" not in actions
     assert "email" not in actions
+    assert "renew" not in actions
     assert "delete" in actions
 
 
-def test_ready_shows_reveal_and_email():
+def test_ready_shows_reveal_email_renew_delete():
     actions = visible_actions(_secret(ready=True))
-    assert actions == ["reveal", "email", "delete"]
+    assert actions == ["reveal", "email", "renew", "delete"]
 
 
-def test_ready_without_email_hides_email():
+def test_ready_without_email_still_has_reveal_and_renew():
     actions = visible_actions(_secret(ready=True, email=None))
-    assert "reveal" in actions
-    assert "email" not in actions
+    assert actions == ["reveal", "renew", "delete"]
 
 
 def test_no_extend_action_ever():

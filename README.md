@@ -1,27 +1,46 @@
-# time-safe
+<h1 align="center">time-safe</h1>
 
-Timelock-encrypt secrets, store the ciphertext in a GitHub repo, and reveal them only **after a chosen date** — enforced cryptographically by [drand](https://drand.love)/[tlock](https://github.com/drand/tlock), not by an honour system. No decryption key is ever stored: until the target time, *nobody* (not you, not GitHub, not an attacker with the repo) can decrypt.
+<p align="center">
+  <b>Lock a secret until a future moment — so that <i>nobody</i>, not even you, can read it early.</b>
+</p>
 
-A terminal app (Textual). Python rewrite of the original Java version.
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.12+-3776AB?logo=python&logoColor=white" alt="Python 3.12+">
+  <img src="https://img.shields.io/badge/TUI-Textual-5A2CA0" alt="Textual">
+  <img src="https://img.shields.io/badge/timelock-drand%2Ftlock-F46036" alt="drand/tlock">
+  <a href="https://louisalexander.github.io/time-safe/"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-222" alt="Docs"></a>
+</p>
+
+<p align="center"><img src="docs/screenshots/02-secrets-list.svg" width="760" alt="time-safe secrets list"></p>
+
+time-safe timelock-encrypts your secrets, stores the ciphertext in a GitHub repo, and lets you reveal them only **after a date you choose**. The time-lock is enforced by cryptography — the [drand](https://drand.love) distributed randomness beacon via [tlock](https://github.com/drand/tlock) — not by an honour system. **No decryption key is ever stored anywhere.** Until the unlock time arrives, the key literally does not exist, so neither you, nor GitHub, nor anyone who copies the repo can decrypt early.
+
+It's a terminal app built with [Textual](https://textual.textualize.io/). (Python rewrite of the original Java version.)
 
 ## How it works
 
-- Each secret is **timelock-encrypted to a future drand round** (the "quicknet" beacon). The round's threshold-BLS signature — the only thing that can decrypt — doesn't exist until that wall-clock time.
-- The ciphertext (`vault/secrets/<id>.tle`) lives in a GitHub repo (your "vault"). There are **no key files**.
-- **Reveal** happens locally: once unlocked, the app fetches the ciphertext + the public drand signature and decrypts in memory. The plaintext never touches disk.
-- **Email delivery** (optional): a per-secret GitHub Actions workflow runs `tle -d` at/after the unlock time and emails the plaintext via the Gmail API. Before the unlock time, decryption simply fails and nothing is sent.
+- Each secret is **timelock-encrypted to a future drand round**. The round's threshold-BLS signature — the only thing that can decrypt it — isn't produced by the beacon network until that wall-clock time.
+- The ciphertext (`vault/secrets/<id>.tle`) lives in a GitHub repo — your "vault." **There are no key files.**
+- **Reveal** is local: once the time passes, the app fetches the ciphertext and the now-public drand signature and decrypts in memory. The plaintext never touches disk.
+- **Email delivery** (optional): a per-secret GitHub Actions workflow runs `tle -d` at/after the unlock time and emails you the plaintext via the Gmail API. Before then, decryption simply fails and nothing is sent.
 
-The only thing stored on your machine is a list of vaults (`~/.timesafe/vaults.json`); GitHub tokens live in your OS keychain.
+The only thing stored on your machine is the list of vaults (`~/.timesafe/vaults.json`). GitHub tokens live in your OS keychain; Gmail credentials live as GitHub Actions secrets.
+
+## Screens
+
+| Vaults | Secret (ready) | Add secret |
+|:---:|:---:|:---:|
+| <img src="docs/screenshots/01-vault-picker.svg" width="260"> | <img src="docs/screenshots/03-secret-detail-ready.svg" width="260"> | <img src="docs/screenshots/04-add-secret.svg" width="260"> |
 
 ## Requirements
 
-- Python 3.12+ and [uv](https://docs.astral.sh/uv/)
-- The drand **`tle`** binary on your `PATH` (or `$TIMESAFE_TLE`, or `./.tools/tle`). Download from the [tlock releases](https://github.com/drand/tlock/releases):
+- **Python 3.12+** and [uv](https://docs.astral.sh/uv/)
+- The drand **`tle`** binary on your `PATH` (or `$TIMESAFE_TLE`, or `./.tools/tle`). From the [tlock releases](https://github.com/drand/tlock/releases):
   ```bash
   mkdir -p .tools
   curl -sL https://github.com/drand/tlock/releases/download/v1.2.0/tlock_1.2.0_darwin_arm64.tar.gz | tar -xz -C .tools tle
   ```
-- A **private** GitHub repo to use as a vault, and a fine-grained PAT with `contents` + `secrets` + `workflows` write access.
+- A **private** GitHub repo for the vault, and a token with `contents` + `secrets` + `workflows` write access.
 
 ## Install & run
 
@@ -30,29 +49,37 @@ uv sync
 uv run timesafe
 ```
 
-In the app: **Initialize new vault** (`n`) with a name, `owner/repo`, and your PAT. You'll then be taken to **Link Gmail** (optional — only needed for email delivery). Add secrets with `a`; open a ready secret and **Reveal** (`d`) it locally or **Email it** (`s`).
+In the app:
+
+- **`n`** — initialize a new vault (name, `owner/repo`, token), then optionally **link Gmail**.
+- **`c`** — connect to an already-initialized vault.
+- **`a`** — add a secret: name, an unlock duration (`30m`, `2h`, `7d`, `1d12h`), an optional delivery email, and the text.
+- Open a ready secret → **`d`** reveal it locally, **`s`** email it, or **`r`** renew (re-lock it for a new duration). **`x`** deletes.
 
 ## Gmail delivery setup (one-time, optional)
 
-Email delivery uses **your own** Google Cloud OAuth client (so refresh tokens don't expire and no Google verification is needed for personal use):
+Email uses **your own** Google Cloud OAuth client:
 
-1. In the [Google Cloud Console](https://console.cloud.google.com), create (or reuse) a project and **enable the Gmail API**.
-2. Configure the OAuth consent screen: **External**, scope `https://www.googleapis.com/auth/gmail.send`. Either add your vault Gmail address under **Test users**, or **Publish** the app (publishing avoids the 7-day refresh-token expiry; an unverified app just shows a warning you click through).
-3. Create an **OAuth client ID** of type **"Desktop app"**. (Not "TVs and Limited Input devices" — Google's device flow rejects the `gmail.send` scope; time-safe uses the loopback/installed-app flow instead.) Note the client id and client secret.
-4. In time-safe, run **Re-link Gmail** (`g`) or the link step during init: enter your Gmail address + the client id/secret, then press **Link**. Your browser opens to Google's consent screen; approve "Send email on your behalf," and the app captures the result on a temporary localhost port.
+1. [Google Cloud Console](https://console.cloud.google.com): create a project and **enable the Gmail API**.
+2. OAuth **consent screen**: External, scope `https://www.googleapis.com/auth/gmail.send`. Add your vault Gmail under **Test users** or **Publish** the app (publishing avoids the 7-day refresh-token expiry).
+3. **Credentials → OAuth client ID → "Desktop app."** (Not "TVs and Limited Input devices" — Google's device flow rejects `gmail.send`; time-safe uses the loopback/installed-app flow.) Note the client id + secret.
+4. In time-safe press **`g`** (or link during init): enter the Gmail address + client id/secret → **Link** → approve in the browser that opens.
 
-The refresh token and client secret are stored **only** as GitHub Actions secrets in the vault repo (`GMAIL_REFRESH_TOKEN`, `OAUTH_CLIENT_SECRET`, `OAUTH_CLIENT_ID`, `GMAIL_ADDRESS`) — never written locally.
+The refresh token + client secret are stored **only** as GitHub Actions secrets in the vault repo — never locally.
 
 ## Security model
 
-- Confidentiality **before** the unlock time is cryptographic (drand threshold). The repo can even be seen without leaking secrets early.
+- Confidentiality **before** the unlock time is cryptographic (drand threshold) — the repo can be seen without leaking anything early.
 - **After** unlock, anyone with repo read access can decrypt — so keep the vault repo **private**.
-- Trust assumptions: the drand threshold isn't compromised before the unlock time, and drand mainnet stays live (it's a robust multi-org network; the chain hash is pinned per secret).
-- A real time-lock means the unlock time is **immutable** — there is no "extend"; to re-time a secret you reveal it after unlock and add it again.
+- Trust assumptions: the drand threshold isn't compromised before the unlock time, and drand mainnet stays live (a robust multi-org network; the chain hash is pinned per secret).
+- A real time-lock means the unlock time is **immutable** — there's no "extend." To re-time a secret, reveal it after unlock and add it again.
+
+More in the [docs](https://louisalexander.github.io/time-safe/): [getting started](docs/getting-started.md) · [architecture](docs/architecture.md) · [usage](docs/usage.md) · [security](docs/security.md).
 
 ## Development
 
 ```bash
-uv run pytest                  # unit + Textual snapshot/Pilot tests
+uv run pytest                                                  # unit + Textual Pilot tests
 TIMESAFE_LIVE=1 uv run pytest tests/test_tle.py -k roundtrip   # live drand roundtrip
+uv run python scripts/make_screenshots.py                      # regenerate docs/screenshots
 ```

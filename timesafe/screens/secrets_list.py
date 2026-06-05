@@ -57,7 +57,11 @@ class SecretsListScreen(Screen):
         self.load()
         self.set_interval(1.0, self._tick)
 
-    @work
+    def on_screen_resume(self) -> None:
+        # Reload after returning from add/renew/delete so the list reflects the change.
+        self.load()
+
+    @work(exclusive=True)
     async def load(self) -> None:
         status = self.query_one("#status", Label)
         status.update("Loading…")
@@ -89,7 +93,7 @@ class SecretsListScreen(Screen):
     def action_add(self) -> None:
         from timesafe.screens.add_secret import AddSecretScreen
 
-        self.app.push_screen(AddSecretScreen(self.vault, on_done=self.load))
+        self.app.push_screen(AddSecretScreen(self.vault))  # list reloads on resume
 
     def action_relink_gmail(self) -> None:
         from timesafe.screens.gmail_link import GmailLinkScreen

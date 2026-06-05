@@ -77,6 +77,32 @@ class Vault:
             raise FileNotFoundError(f"ciphertext missing for {secret.id}")
         return tle.decrypt(ciphertext).decode()
 
+    def renew(self, secret: Secret, new_unlock_at: datetime) -> Secret:
+        """Re-lock a *ready* secret for a new duration: decrypt now, re-encrypt to a new round.
+
+        Only possible once a secret is unlocked — a still-locked tlock ciphertext can't be re-timed
+        because it can't be read. Mutates and returns the secret with its new unlock time/round.
+        """
+        plaintext = self.reveal(secret)  # raises tle.NotYetUnlocked if still locked
+        info = drand.fetch_info(self._http)
+        new_round = drand.round_at(info, new_unlock_at)
+        ciphertext = tle.encrypt(plaintext.encode(), new_round)
+        secret.unlock_at = new_unlock_at
+        secret.drand_round = new_round
+        secret.drand_chain = info.chain_hash
+        self.github.put_file(f"{SECRETS_DIR}/{secret.id}.tle", ciphertext, f"renew: {secret.name}")
+        self.github.put_file(
+            f"{SECRETS_DIR}/{secret.id}.meta",
+            secret.to_meta_json().encode(),
+            f"renew: meta {secret.name}",
+        )
+        self.github.put_file(
+            _workflow_path(secret.id),
+            build_unlock_workflow_yaml(secret).encode(),
+            f"renew: workflow {secret.name}",
+        )
+        return secret
+
     def delete(self, secret: Secret) -> None:
         self.github.delete_file(f"{SECRETS_DIR}/{secret.id}.tle", f"delete {secret.name}")
         self.github.delete_file(f"{SECRETS_DIR}/{secret.id}.meta", f"delete {secret.name}")
