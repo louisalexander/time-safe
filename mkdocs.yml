@@ -1,7 +1,11 @@
-site_name: TimeSafe for Secrets
+site_name: time-safe
+site_description: Timelock-encrypt secrets in a GitHub vault and reveal them only after a chosen date (drand/tlock).
 site_url: https://louisalexander.github.io/time-safe
 repo_url: https://github.com/louisalexander/time-safe
 repo_name: louisalexander/time-safe
+
+exclude_docs: |
+  superpowers/
 
 theme:
   name: material
@@ -44,7 +48,7 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - Architecture: architecture.md
   - Getting Started: getting-started.md
   - Usage: usage.md
+  - Architecture: architecture.md
   - Security: security.md
