@@ -17,13 +17,17 @@ def status_text(secret: Secret, now: datetime | None = None) -> str:
     now = now or datetime.now(timezone.utc)
     if secret.is_ready(now):
         return "● ready"
-    delta = secret.unlock_at - now
-    days = delta.days
-    hours = delta.seconds // 3600
-    mins = (delta.seconds % 3600) // 60
+    total = int((secret.unlock_at - now).total_seconds())
+    days, rem = divmod(total, 86400)
+    hours, rem = divmod(rem, 3600)
+    mins, secs = divmod(rem, 60)
     if days > 0:
         return f"{days}d {hours}h {mins:02d}m"
-    return f"{hours}h {mins:02d}m"
+    if hours > 0:
+        return f"{hours}h {mins:02d}m {secs:02d}s"
+    if mins > 0:
+        return f"{mins}m {secs:02d}s"
+    return f"{secs}s"
 
 
 class SecretsListScreen(Screen):

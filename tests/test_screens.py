@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
 
-from timesafe.screens.add_secret import is_valid_email
+import pytest
+
+from timesafe.screens.add_secret import is_valid_email, parse_duration
 from timesafe.screens.init_vault import describe_github_error, is_valid_repo
 from timesafe.screens.secret_detail import visible_actions
 from timesafe.screens.secrets_list import status_text
@@ -47,6 +49,29 @@ def test_status_text_ready():
 def test_status_text_countdown_shows_days():
     s = _secret(ready=False)  # ~2 days out
     assert "d " in status_text(s)
+
+
+def test_status_text_short_durations_tick_in_seconds():
+    now = datetime.now(timezone.utc)
+    s = Secret.create("S", now + timedelta(seconds=90), 1, "c", None)
+    assert status_text(s, now) == "1m 30s"
+
+
+# ── duration parsing ─────────────────────────────────────────────────────────
+def test_parse_duration_units():
+    assert parse_duration("30m") == timedelta(minutes=30)
+    assert parse_duration("2h") == timedelta(hours=2)
+    assert parse_duration("7d") == timedelta(days=7)
+    assert parse_duration("90s") == timedelta(seconds=90)
+    assert parse_duration("1d12h") == timedelta(days=1, hours=12)
+    assert parse_duration(" 2h ") == timedelta(hours=2)
+    assert parse_duration("5") == timedelta(days=5)  # bare number = days
+
+
+def test_parse_duration_rejects_bad_input():
+    for bad in [None, "", "abc", "5x", "-3d", "0", "1.5h", "d"]:
+        with pytest.raises(ValueError):
+            parse_duration(bad)
 
 
 # ── validators ───────────────────────────────────────────────────────────────

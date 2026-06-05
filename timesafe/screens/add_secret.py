@@ -1,8 +1,30 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
+
+_UNIT = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days", "w": "weeks"}
+
+
+def parse_duration(text: str | None) -> timedelta:
+    """Parse a lock duration like '30m', '2h', '7d', '1d12h', '90s'. A bare number means days."""
+    s = re.sub(r"\s+", "", (text or "").strip().lower())
+    if not s:
+        raise ValueError("Enter a duration, e.g. 30m, 2h, 7d.")
+    if s.isdigit():
+        total = timedelta(days=int(s))
+    else:
+        if not re.fullmatch(r"(\d+[smhdw])+", s):
+            raise ValueError("Invalid duration — use e.g. 30m, 2h, 7d, 1d12h.")
+        kwargs: dict[str, int] = {}
+        for num, unit in re.findall(r"(\d+)([smhdw])", s):
+            kwargs[_UNIT[unit]] = kwargs.get(_UNIT[unit], 0) + int(num)
+        total = timedelta(**kwargs)
+    if total.total_seconds() <= 0:
+        raise ValueError("Duration must be positive.")
+    return total
 
 from textual import work
 from textual.app import ComposeResult
@@ -37,8 +59,8 @@ class AddSecretScreen(Screen):
             yield Label("Add secret", classes="title")
             yield Label("Name")
             yield Input(id="name")
-            yield Label("Unlock in (days)")
-            yield Input(value="30", id="days")
+            yield Label("Unlock in  (e.g. 30m, 2h, 7d, 1d12h)")
+            yield Input(value="7d", id="duration")
             yield Label("Delivery email (optional)")
             yield Input(id="email")
             yield Label("Secret text")
@@ -53,7 +75,7 @@ class AddSecretScreen(Screen):
 
     def _save(self) -> None:
         name = self.query_one("#name", Input).value.strip()
-        days_raw = self.query_one("#days", Input).value.strip()
+        duration_raw = self.query_one("#duration", Input).value.strip()
         email = self.query_one("#email", Input).value.strip()
         text = self.query_one("#text", TextArea).text.strip()
         error = self.query_one("#error", Label)
@@ -61,16 +83,14 @@ class AddSecretScreen(Screen):
             error.update("Name and secret text are required.")
             return
         try:
-            days = int(days_raw)
-            if days <= 0:
-                raise ValueError
-        except ValueError:
-            error.update("Unlock days must be a positive integer.")
+            duration = parse_duration(duration_raw)
+        except ValueError as exc:
+            error.update(str(exc))
             return
         if email and not is_valid_email(email):
             error.update("Delivery email is not valid.")
             return
-        unlock_at = datetime.now(timezone.utc) + timedelta(days=days)
+        unlock_at = datetime.now(timezone.utc) + duration
         self._do_save(name, unlock_at, text, email or None)
 
     @work
