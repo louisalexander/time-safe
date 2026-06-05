@@ -9,7 +9,7 @@ from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Header, Input, Label
 
-from timesafe.oauth import device_flow
+from timesafe.oauth import loopback_flow
 
 
 class GmailLinkScreen(Screen):
@@ -26,7 +26,7 @@ class GmailLinkScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
         with Vertical():
-            yield Label("Link Gmail (device authorization)", classes="title")
+            yield Label("Link Gmail (opens your browser)", classes="title")
             yield Label("Vault Gmail address")
             yield Input(id="gmail")
             yield Label("OAuth client id")
@@ -51,15 +51,15 @@ class GmailLinkScreen(Screen):
     @work
     async def _do_link(self, gmail, client_id, client_secret) -> None:
         status = self.query_one("#status", Label)
-        status.update("Starting Google authorization…")
+        status.update("Opening your browser to authorize…")
 
-        def on_prompt(dc):
+        def on_prompt(url: str) -> None:
             self.app.call_from_thread(
-                status.update, f"Open {dc.verification_url} and enter code: {dc.user_code}"
+                status.update, f"Authorize in your browser. If it didn't open, visit:\n{url}"
             )
 
         def blocking():
-            refresh_token = device_flow.run(client_id, client_secret, on_prompt)
+            refresh_token = loopback_flow.run(client_id, client_secret, on_prompt)
             self.vault.relink_gmail(gmail, client_id, client_secret, refresh_token)
 
         try:

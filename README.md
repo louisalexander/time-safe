@@ -37,9 +37,9 @@ In the app: **Initialize new vault** (`n`) with a name, `owner/repo`, and your P
 Email delivery uses **your own** Google Cloud OAuth client (so refresh tokens don't expire and no Google verification is needed for personal use):
 
 1. In the [Google Cloud Console](https://console.cloud.google.com), create (or reuse) a project and **enable the Gmail API**.
-2. Configure the OAuth consent screen: **External**, publishing status **In production / Published**, scope `https://www.googleapis.com/auth/gmail.send`.
-3. Create an **OAuth client ID** of type **"TVs and Limited Input devices"** (this supports the device flow the TUI uses). Note the client id and client secret.
-4. In time-safe, run **Re-link Gmail** (`g`) or the link step during init: enter your Gmail address + the client id/secret, then visit the shown Google URL and enter the code.
+2. Configure the OAuth consent screen: **External**, scope `https://www.googleapis.com/auth/gmail.send`. Either add your vault Gmail address under **Test users**, or **Publish** the app (publishing avoids the 7-day refresh-token expiry; an unverified app just shows a warning you click through).
+3. Create an **OAuth client ID** of type **"Desktop app"**. (Not "TVs and Limited Input devices" — Google's device flow rejects the `gmail.send` scope; time-safe uses the loopback/installed-app flow instead.) Note the client id and client secret.
+4. In time-safe, run **Re-link Gmail** (`g`) or the link step during init: enter your Gmail address + the client id/secret, then press **Link**. Your browser opens to Google's consent screen; approve "Send email on your behalf," and the app captures the result on a temporary localhost port.
 
 The refresh token and client secret are stored **only** as GitHub Actions secrets in the vault repo (`GMAIL_REFRESH_TOKEN`, `OAUTH_CLIENT_SECRET`, `OAUTH_CLIENT_ID`, `GMAIL_ADDRESS`) — never written locally.
 
