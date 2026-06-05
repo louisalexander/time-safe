@@ -209,6 +209,7 @@ gallery.xml
 project.lock.json
 
 # Python (timesafe rewrite)
+.tools/
 .venv/
 __pycache__/
 *.pyc
