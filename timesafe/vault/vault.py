@@ -68,6 +68,7 @@ class Vault:
                 content = self.github.get_file(path)
                 if content is not None:
                     secrets.append(Secret.from_meta_json(content))
+        secrets.sort(key=lambda s: s.created_at, reverse=True)
         return secrets
 
     def reveal(self, secret: Secret) -> str:
