@@ -87,7 +87,18 @@ class SecretDetailScreen(Screen):
         self.app.push_screen(RenewScreen(self.vault, self.secret))
 
     def action_delete(self) -> None:
-        self._do_delete()
+        from timesafe.screens.confirm import ConfirmScreen
+
+        def after(confirmed: bool | None) -> None:
+            if confirmed:
+                self._do_delete()
+
+        self.app.push_screen(
+            ConfirmScreen(
+                f"Delete “{self.secret.name}”? This is permanent.", "Delete", danger=True
+            ),
+            after,
+        )
 
     @work
     async def _do_reveal(self) -> None:

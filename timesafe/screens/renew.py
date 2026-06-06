@@ -38,12 +38,28 @@ class RenewScreen(Screen):
 
     def _renew(self) -> None:
         error = self.query_one("#error", Label)
+        raw = self.query_one("#duration", Input).value
         try:
-            duration = parse_duration(self.query_one("#duration", Input).value)
+            duration = parse_duration(raw)
         except ValueError as exc:
             error.update(str(exc))
             return
-        self._do_renew(datetime.now(timezone.utc) + duration)
+        new_unlock = datetime.now(timezone.utc) + duration
+
+        from timesafe.screens.confirm import ConfirmScreen
+
+        def after(confirmed: bool | None) -> None:
+            if confirmed:
+                self._do_renew(new_unlock)
+
+        self.app.push_screen(
+            ConfirmScreen(
+                f"Re-lock “{self.secret.name}” for {raw.strip()}? "
+                "You won't be able to read it until then.",
+                "Renew",
+            ),
+            after,
+        )
 
     @work
     async def _do_renew(self, new_unlock_at) -> None:

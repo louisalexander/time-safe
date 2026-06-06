@@ -23,3 +23,25 @@ Label.title {
 Input, TextArea {
     margin: 0 0 1 0;
 }
+
+ConfirmScreen {
+    align: center middle;
+}
+
+#confirm-dialog {
+    width: auto;
+    max-width: 70;
+    height: auto;
+    padding: 1 2;
+    border: round $accent;
+    background: $surface;
+}
+
+#confirm-buttons {
+    height: auto;
+    align-horizontal: center;
+}
+
+#confirm-buttons Button {
+    margin: 1 1 0 1;
+}
