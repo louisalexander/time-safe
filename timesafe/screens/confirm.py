@@ -3,7 +3,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Label
+from textual.widgets import Button, Static
 
 
 class ConfirmScreen(ModalScreen[bool]):
@@ -23,7 +23,7 @@ class ConfirmScreen(ModalScreen[bool]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="confirm-dialog"):
-            yield Label(self._message, id="confirm-message")
+            yield Static(self._message, id="confirm-message")
             with Horizontal(id="confirm-buttons"):
                 yield Button(
                     self._confirm_label,

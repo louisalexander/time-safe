@@ -29,15 +29,21 @@ ConfirmScreen {
 }
 
 #confirm-dialog {
-    width: auto;
-    max-width: 70;
+    width: 64;
     height: auto;
     padding: 1 2;
     border: round $accent;
     background: $surface;
 }
 
+#confirm-message {
+    width: 100%;
+    height: auto;
+    margin-bottom: 1;
+}
+
 #confirm-buttons {
+    width: 100%;
     height: auto;
     align-horizontal: center;
 }
