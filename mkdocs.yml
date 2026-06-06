@@ -9,6 +9,8 @@ exclude_docs: |
 
 theme:
   name: material
+  logo: assets/timesafe_github_avatar.png
+  favicon: assets/timesafe_github_avatar.png
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default

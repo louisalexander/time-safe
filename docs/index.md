@@ -1,4 +1,6 @@
-# time-safe
+<p align="center">
+  <img src="assets/timesafe_readme_logo.png" width="420" alt="time-safe — Encrypt Today. Unlock Tomorrow.">
+</p>
 
 [![Python](https://img.shields.io/badge/python-3.12+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 ![Textual](https://img.shields.io/badge/TUI-Textual-5A2CA0)
