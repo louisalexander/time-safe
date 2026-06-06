@@ -20,10 +20,14 @@ def test_get_file_returns_none_on_404():
 
 
 @respx.mock
-def test_get_file_decodes_base64_content():
-    payload = base64.b64encode(b"cipher").decode()
+def test_get_file_returns_exact_bytes_from_git_blob_not_contents():
+    # The Contents API mangles binary; get_file must read the exact bytes from the git blob.
+    sha = "deadbeefsha"
     respx.get(f"{API}/repos/{REPO}/contents/vault/secrets/x.tle").respond(
-        json={"content": payload, "sha": "abc"}
+        json={"content": "Y29ycnVwdGVk", "sha": sha}  # contents 'content' is corrupted/ignored
+    )
+    respx.get(f"{API}/repos/{REPO}/git/blobs/{sha}").respond(
+        json={"content": base64.b64encode(b"cipher").decode()}
     )
     assert _client().get_file("vault/secrets/x.tle") == b"cipher"
 

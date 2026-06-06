@@ -31,7 +31,13 @@ class GitHubClient:
         if r.status_code == 404:
             return None
         r.raise_for_status()
-        return base64.b64decode(r.json()["content"])
+        # The Contents API charset-detects binary files (e.g. tlock ciphertext) as UTF-16 and
+        # returns them re-encoded, corrupting them. Fetch the exact bytes from the git blob instead
+        # (the contents response's `sha` is the blob's object id).
+        sha = r.json()["sha"]
+        blob = self._client.get(f"/repos/{self.repo}/git/blobs/{sha}")
+        blob.raise_for_status()
+        return base64.b64decode(blob.json()["content"])
 
     def _get_sha(self, path: str) -> str | None:
         r = self._client.get(self._contents(path))
