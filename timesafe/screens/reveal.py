@@ -9,7 +9,10 @@ from textual.widgets import Footer, Header, Label, TextArea
 class RevealScreen(Screen):
     """Shows a locally-decrypted secret. Plaintext lives only here and is dropped on pop."""
 
-    BINDINGS = [("escape", "app.pop_screen", "back")]
+    BINDINGS = [
+        ("c", "copy", "copy"),
+        ("escape", "app.pop_screen", "back"),
+    ]
 
     def __init__(self, name: str, plaintext: str) -> None:
         super().__init__()
@@ -25,3 +28,7 @@ class RevealScreen(Screen):
             area = TextArea(self._plaintext, read_only=True, id="plaintext")
             yield area
         yield Footer()
+
+    def action_copy(self) -> None:
+        self.app.copy_to_clipboard(self._plaintext)
+        self.notify("Copied to clipboard.")
