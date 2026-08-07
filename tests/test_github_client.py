@@ -60,6 +60,19 @@ def test_default_branch():
     assert _client().default_branch() == "main"
 
 
+def test_api_base_url_can_be_overridden_by_environment(monkeypatch):
+    # Lets the end-to-end tests point a real subprocess at a local stub, and covers GH Enterprise.
+    monkeypatch.setenv("TIMESAFE_GITHUB_API", "http://127.0.0.1:9999")
+    client = GitHubClient(REPO, "t")
+    assert str(client._client.base_url).rstrip("/") == "http://127.0.0.1:9999"
+
+
+def test_api_base_url_defaults_to_github(monkeypatch):
+    monkeypatch.delenv("TIMESAFE_GITHUB_API", raising=False)
+    client = GitHubClient(REPO, "t")
+    assert str(client._client.base_url).rstrip("/") == API
+
+
 # ── repo creation ────────────────────────────────────────────────────────────
 @respx.mock
 def test_get_authenticated_login():

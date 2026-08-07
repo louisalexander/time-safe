@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import base64
+import os
 
 import httpx
 
 API = "https://api.github.com"
+API_ENV = "TIMESAFE_GITHUB_API"
 
 
 class GitHubClient:
@@ -12,8 +14,10 @@ class GitHubClient:
 
     def __init__(self, repo: str, token: str, client: httpx.Client | None = None) -> None:
         self.repo = repo
+        # $TIMESAFE_GITHUB_API points at a different API root — GitHub Enterprise, or the stub
+        # server the end-to-end tests run a real subprocess against.
         self._client = client or httpx.Client(
-            base_url=API,
+            base_url=os.environ.get(API_ENV) or API,
             headers={
                 "Authorization": f"Bearer {token}",
                 "Accept": "application/vnd.github+json",
