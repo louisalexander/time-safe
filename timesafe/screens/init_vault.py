@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import re
 from datetime import datetime, timezone
 
 from textual import work
@@ -11,13 +10,10 @@ from textual.screen import Screen
 from textual.widgets import Button, Footer, Header, Input, Label
 
 from timesafe.screens.gmail_link import GmailLinkScreen
+from timesafe.validation import is_valid_repo
 from timesafe.vault.vault import Vault
 
-_REPO_RE = re.compile(r"^[^/\s]+/[^/\s]+$")
-
-
-def is_valid_repo(repo: str | None) -> bool:
-    return bool(repo) and _REPO_RE.match(repo) is not None
+__all__ = ["InitVaultScreen", "describe_github_error", "is_valid_repo"]
 
 
 def describe_github_error(exc: Exception) -> str:

@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+from timesafe.timelock.tle import TLE_VERSION
 from timesafe.vault.secret import Secret
 
-TLE_RELEASE = "https://github.com/drand/tlock/releases/download/v1.2.0/tlock_1.2.0_linux_amd64.tar.gz"
+# Built from the single pinned version in timelock/tle.py so the runner and the local binary can
+# never drift apart.
+TLE_RELEASE = (
+    f"https://github.com/drand/tlock/releases/download/v{TLE_VERSION}"
+    f"/tlock_{TLE_VERSION}_linux_amd64.tar.gz"
+)
 
 _WORKFLOW_TEMPLATE = """\
 name: Unlock __NAME__

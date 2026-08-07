@@ -68,6 +68,35 @@ class GitHubClient:
         r.raise_for_status()
         return [item["path"] for item in r.json()]
 
+    # ── repo lifecycle ────────────────────────────────────────────────────────
+    def get_authenticated_login(self) -> str:
+        r = self._client.get("/user")
+        r.raise_for_status()
+        return r.json()["login"]
+
+    def repo_exists(self) -> bool:
+        r = self._client.get(f"/repos/{self.repo}")
+        if r.status_code == 404:
+            return False
+        r.raise_for_status()
+        return True
+
+    def create_repo(self, *, auto_init: bool = True) -> None:
+        """Create the vault repo. Always private — the security model depends on it, so there is
+        deliberately no way to ask for a public one.
+
+        Personal repos go to /user/repos; anything owned by someone other than the authenticated
+        login is treated as an org and goes to /orgs/{owner}/repos.
+        """
+        owner, _, name = self.repo.partition("/")
+        body = {"name": name, "private": True, "auto_init": auto_init}
+        endpoint = (
+            "/user/repos"
+            if owner == self.get_authenticated_login()
+            else f"/orgs/{owner}/repos"
+        )
+        self._client.post(endpoint, json=body).raise_for_status()
+
     # ── repo / workflows ──────────────────────────────────────────────────────
     def default_branch(self) -> str:
         r = self._client.get(f"/repos/{self.repo}")
