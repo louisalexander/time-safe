@@ -1,60 +1,10 @@
 from datetime import datetime, timedelta, timezone
 
-import pytest
-
-from timesafe.timelock import drand, tle
-from timesafe.timelock.drand import DrandInfo
+from tests.fakes import FakeGitHub
 from timesafe.vault.vault import SCRIPT_PATH, SECRETS_DIR, SENTINEL, Vault, _workflow_path
 
-
-class FakeGitHub:
-    def __init__(self):
-        self.files: dict[str, bytes] = {}
-        self.dispatched: list[tuple[str, str]] = []
-        self.secrets: dict[str, tuple[str, str]] = {}
-
-    def get_file(self, path):
-        return self.files.get(path)
-
-    def put_file(self, path, content, message):
-        self.files[path] = content
-
-    def delete_file(self, path, message):
-        self.files.pop(path, None)
-
-    def list_dir(self, path):
-        return [p for p in self.files if p.startswith(path + "/")]
-
-    def default_branch(self):
-        return "main"
-
-    def dispatch_workflow(self, wf, ref):
-        self.dispatched.append((wf, ref))
-
-    def actions_public_key(self):
-        return ("kid", "pubkey")
-
-    def put_actions_secret(self, name, value, key_id):
-        self.secrets[name] = (value, key_id)
-
-    def delete_actions_secret(self, name):
-        self.secrets.pop(name, None)
-
-
-@pytest.fixture
-def faked(monkeypatch):
-    """Fake drand (no network) and tlock (reversible 'CT:' prefix) so vault logic is hermetic."""
-    monkeypatch.setattr(drand, "fetch_info", lambda http: DrandInfo(0, 3, "chainhash"))
-    monkeypatch.setattr(tle, "encrypt", lambda pt, rnd, **k: b"CT:" + pt)
-
-    def fake_dec(ct, **k):
-        if ct.startswith(b"CT:"):
-            return ct[3:]
-        raise tle.TleError("bad ciphertext")
-
-    monkeypatch.setattr(tle, "decrypt", fake_dec)
-    # secrets_api.seal is called by relink; replace with identity so no real crypto in this test
-    monkeypatch.setattr("timesafe.vault.vault.seal", lambda pk, v: f"sealed:{v}")
+# FakeGitHub and the `faked` fixture live in tests/fakes.py + tests/conftest.py so the api and cli
+# suites share them.
 
 
 def _future():

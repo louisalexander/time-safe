@@ -8,7 +8,8 @@ from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Header, Input, Label
 
-from timesafe.screens.init_vault import describe_github_error, is_valid_repo
+from timesafe.screens.init_vault import describe_github_error
+from timesafe.validation import is_valid_repo
 
 
 class ConnectVaultScreen(Screen):

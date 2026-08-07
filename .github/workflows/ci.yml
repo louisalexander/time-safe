@@ -5,6 +5,8 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  # Called by release.yml so the release pipeline gates on exactly this suite, not a copy of it.
+  workflow_call:
 
 jobs:
   test:

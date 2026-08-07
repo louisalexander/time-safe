@@ -9,7 +9,7 @@ from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Header, Input, Label
 
-from timesafe.screens.add_secret import parse_duration
+from timesafe.validation import parse_duration
 
 
 class RenewScreen(Screen):

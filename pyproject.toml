@@ -1,6 +1,6 @@
 [project]
 name = "timesafe"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Timelock-encrypt secrets in a GitHub vault and reveal them only after a chosen date (drand/tlock)."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -20,14 +20,26 @@ dev = [
     "pytest-asyncio>=0.23",
     "respx>=0.21",
     "pytest-textual-snapshot>=1.0",
+    "wheel>=0.44",
+    "uv>=0.4",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.version]
+path = "timesafe/__init__.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["timesafe"]
+# The vendored `tle` binary is gitignored (it's fetched per-target by scripts/build_wheels.py),
+# so it must be listed explicitly or hatchling would leave it out of the wheel.
+artifacts = ["timesafe/_bin/*"]
+
+[tool.hatch.build.targets.sdist]
+# The sdist carries no binary — tle_path() raises a message explaining that when it's missing.
+exclude = ["timesafe/_bin"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
