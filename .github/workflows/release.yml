@@ -48,6 +48,11 @@ jobs:
       - name: Build sdist
         run: uv build --sdist --out-dir dist
 
+      # PyPI rejects malformed metadata or an unrenderable README at upload time — after the tag
+      # has been cut and the version number spent. Catch it on every push instead.
+      - name: Check the package metadata PyPI will see
+        run: uv run python -m twine check --strict dist/*
+
       - name: Smoke-test the linux wheel in a clean environment
         # Run from /tmp so `import timesafe` resolves to the installed wheel, not the source tree.
         run: |
