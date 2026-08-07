@@ -118,6 +118,29 @@ def test_the_console_script_points_at_the_dispatcher():
     assert 'timesafe = "timesafe.__main__:main"' in config
 
 
+# ── licensing ────────────────────────────────────────────────────────────────
+def test_license_is_verbatim_mit_so_it_is_detected():
+    """GitHub matches LICENSE against known templates; extra prose makes it report NOASSERTION.
+
+    Third-party attribution belongs in NOTICE, not appended here.
+    """
+    text = (REPO_ROOT / "LICENSE").read_text()
+    assert text.startswith("MIT License")
+    assert text.rstrip().endswith("SOFTWARE.")
+    assert "tlock" not in text
+
+
+def test_notice_records_the_bundled_third_party_binary():
+    notice = (REPO_ROOT / "NOTICE").read_text()
+    assert "tlock" in notice
+    assert "Apache" in notice and "MIT" in notice
+
+
+def test_both_licence_files_ship_in_the_distribution():
+    config = (REPO_ROOT / "pyproject.toml").read_text()
+    assert 'license-files = ["LICENSE", "NOTICE"]' in config
+
+
 # ── version reporting ────────────────────────────────────────────────────────
 def test_the_package_carries_its_own_version():
     """importlib.metadata is empty in a frozen binary, so the version must live in the package."""

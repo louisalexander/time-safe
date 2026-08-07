@@ -1,0 +1,18 @@
+time-safe
+Copyright (c) 2026 Louis Alexander
+Licensed under the MIT License. See LICENSE.
+
+--------------------------------------------------------------------------------
+Third-party components distributed with this software
+--------------------------------------------------------------------------------
+
+tlock (`tle` binary) — https://github.com/drand/tlock
+    Copyright (c) drand contributors
+    Dual-licensed under Apache License 2.0 and the MIT License.
+
+    Platform wheels and the standalone executables bundle the `tle` binary so
+    that timelock encryption works without a separate install. Its licence
+    texts are shipped alongside it as timesafe/_bin/LICENSE-APACHE and
+    timesafe/_bin/LICENSE-MIT.
+
+    The source distribution does not bundle the binary.
