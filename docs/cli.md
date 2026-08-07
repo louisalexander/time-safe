@@ -47,7 +47,7 @@ Everything comes from the environment, so nothing has to be typed.
 | Variable | Purpose |
 |---|---|
 | `TIMESAFE_VAULT` | which vault — `owner/repo`, or a name from your local vault list |
-| `TIMESAFE_GITHUB_TOKEN` | GitHub PAT with `contents` write (plus `workflows` for delivery) |
+| `TIMESAFE_GITHUB_TOKEN` | GitHub PAT — needs **`contents` *and* `workflow`** write (see below) |
 | `TIMESAFE_TLE` | path to a specific `tle` binary (overrides the bundled one) |
 | `TIMESAFE_GITHUB_API` | alternate API root, for GitHub Enterprise |
 | `TIMESAFE_DEBUG` | set to `1` to print an exception line on unexpected failures |
@@ -59,6 +59,28 @@ candidates, never a guess.
 **How the token is found:** `$TIMESAFE_GITHUB_TOKEN` first, then the OS keychain. Environment-first is
 what makes cron work: a headless session has no unlocked keychain, and time-safe will never block
 waiting for one.
+
+!!! danger "The `workflow` scope is required for *every* `add`"
+
+    time-safe writes one workflow file per secret (`.github/workflows/unlock-<id>.yml`), and it does
+    so on **every** `add` — not only when `--email` is given. Writing anything under
+    `.github/workflows/` requires the `workflow` scope, so a token with `contents` write alone
+    fails, and it fails only on the third of three writes:
+
+    ```json
+    {"error": "Failed to write the secret. GitHub returned 403 writing
+     .github/workflows/unlock-45d30ee9-….yml. …", "code": "vault",
+     "cleaned": ["vault/secrets/45d30ee9-….meta", "vault/secrets/45d30ee9-….tle"]}
+    ```
+
+    The `cleaned` list is the tell: `.tle` and `.meta` were written and then rolled back, so the
+    failure was on the workflow. Fix it on the token:
+
+    - **Classic PAT** → tick `repo` *and* `workflow`.
+    - **Fine-grained PAT** → Contents: Read and write, **Workflows: Read and write**.
+
+    Add `secrets: write` too if you want Gmail delivery, which stores its credentials as Actions
+    secrets.
 
 !!! warning "Token hygiene"
 
