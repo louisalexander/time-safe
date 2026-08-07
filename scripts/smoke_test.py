@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 EXIT_USAGE = 2
@@ -57,27 +58,38 @@ def check_wheel() -> None:
         _fail("tlock's licence files were not shipped alongside the binary")
     print(f"ok: licences shipped ({', '.join(p.name for p in licences)})")
 
+    # The console script is what users actually invoke; importing the package doesn't prove it exists.
+    script = Path(sys.executable).parent / "timesafe"
+    if not script.exists():
+        _fail(f"the `timesafe` console script was not installed (looked in {script.parent})")
+    _check_cli(str(script))
 
-def check_binary(executable: str) -> None:
-    exe = Path(executable).resolve()
-    if not exe.exists():
-        _fail(f"{exe} does not exist")
 
-    helped = _run([str(exe), "--help"])
+def _check_cli(executable: str) -> None:
+    """Shared CLI assertions for both the console script and the standalone binary.
+
+    HOME is redirected so a developer's real ~/.timesafe/vaults.json can't be picked up and turn the
+    no-vault check into a live GitHub call.
+    """
+    helped = _run([executable, "--help"])
     if helped.returncode != 0 or b"reveal" not in helped.stdout:
         _fail("--help did not list the commands")
     print("ok: --help works")
 
-    versioned = _run([str(exe), "--version"])
+    versioned = _run([executable, "--version"])
     if versioned.returncode != 0 or not versioned.stdout.strip():
         _fail("--version produced nothing")
     print(f"ok: --version -> {versioned.stdout.decode().strip()}")
 
-    # No vault configured is a usage error with a machine-readable body, not a crash or a traceback.
-    env = {"PATH": "/usr/bin:/bin", "HOME": "/tmp"}
-    status = _run([str(exe), "status", "--json"], env=env)
+    with tempfile.TemporaryDirectory() as empty_home:
+        env = {"PATH": "/usr/bin:/bin", "HOME": empty_home}
+        status = _run([executable, "status", "--json"], env=env)
+
     if status.returncode != EXIT_USAGE:
-        _fail(f"expected exit {EXIT_USAGE} with no vault configured, got {status.returncode}")
+        _fail(
+            f"expected exit {EXIT_USAGE} with no vault configured, got {status.returncode}: "
+            f"{status.stderr!r}"
+        )
     if b"Traceback" in status.stderr:
         _fail("a traceback escaped to stderr")
     try:
@@ -88,8 +100,17 @@ def check_binary(executable: str) -> None:
         _fail(f"error body has no machine-readable code: {body}")
     print(f"ok: no-vault exits {EXIT_USAGE} with code={body['code']}")
 
+
+def check_binary(executable: str) -> None:
+    exe = Path(executable).resolve()
+    if not exe.exists():
+        _fail(f"{exe} does not exist")
+
+    _check_cli(str(exe))
+
     # The TUI is deliberately excluded from the standalone build; it must say so, not crash.
-    tui = _run([str(exe), "tui"], env=env)
+    with tempfile.TemporaryDirectory() as empty_home:
+        tui = _run([str(exe), "tui"], env={"PATH": "/usr/bin:/bin", "HOME": empty_home})
     if tui.returncode != EXIT_USAGE or b"Traceback" in tui.stderr:
         _fail(f"`tui` should exit {EXIT_USAGE} with an explanation, got {tui.returncode}")
     print("ok: `tui` reports that this build is CLI-only")
