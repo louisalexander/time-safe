@@ -77,9 +77,13 @@ def _check_cli(executable: str) -> None:
     print("ok: --help works")
 
     versioned = _run([executable, "--version"])
-    if versioned.returncode != 0 or not versioned.stdout.strip():
+    reported = versioned.stdout.decode().strip()
+    if versioned.returncode != 0 or not reported:
         _fail("--version produced nothing")
-    print(f"ok: --version -> {versioned.stdout.decode().strip()}")
+    # A published artifact that reports "unknown" tells an operator nothing about what they're running.
+    if "unknown" in reported or "0.0.0" in reported:
+        _fail(f"--version has no real version: {reported!r}")
+    print(f"ok: --version -> {reported}")
 
     with tempfile.TemporaryDirectory() as empty_home:
         env = {"PATH": "/usr/bin:/bin", "HOME": empty_home}

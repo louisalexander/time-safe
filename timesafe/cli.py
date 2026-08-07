@@ -25,12 +25,11 @@ PROG = "timesafe"
 
 
 def _version() -> str:
-    try:
-        from importlib.metadata import version
+    # Read from the package, not importlib.metadata: a frozen binary has no installed metadata, and
+    # a release that reports "unknown" tells an operator nothing about what they are running.
+    from timesafe import __version__
 
-        return version("timesafe")
-    except Exception:  # noqa: BLE001 — running from a source tree without metadata
-        return "0.0.0+unknown"
+    return __version__
 
 
 # ── argument parsing ─────────────────────────────────────────────────────────

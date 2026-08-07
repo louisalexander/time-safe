@@ -118,6 +118,29 @@ def test_the_console_script_points_at_the_dispatcher():
     assert 'timesafe = "timesafe.__main__:main"' in config
 
 
+# ── version reporting ────────────────────────────────────────────────────────
+def test_the_package_carries_its_own_version():
+    """importlib.metadata is empty in a frozen binary, so the version must live in the package."""
+    import timesafe
+
+    assert re.fullmatch(r"\d+\.\d+\.\d+", timesafe.__version__)
+
+
+def test_pyproject_derives_its_version_from_the_package():
+    # One source of truth, so a release can't ship a binary reporting a different version.
+    config = (REPO_ROOT / "pyproject.toml").read_text()
+    assert 'dynamic = ["version"]' in config
+    assert 'path = "timesafe/__init__.py"' in config
+
+
+def test_the_cli_reports_the_real_version_without_installed_metadata():
+    import timesafe
+    from timesafe import cli
+
+    assert cli._version() == timesafe.__version__
+    assert "unknown" not in cli._version()
+
+
 # ── PyInstaller spec ─────────────────────────────────────────────────────────
 def test_the_binary_spec_excludes_textual():
     """The standalone build is CLI-only; bundling Textual doubles it for no benefit."""

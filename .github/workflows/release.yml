@@ -62,51 +62,55 @@ jobs:
     name: Standalone ${{ matrix.name }}
     needs: test
     runs-on: ${{ matrix.runs-on }}
-    container: ${{ matrix.container }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          # manylinux2014 is glibc 2.17 — older than Ubuntu 18.04's 2.27, so the result runs on
-          # the hosts that cannot use the wheels at all.
+          # manylinux2014 is glibc 2.17 — older than Ubuntu 18.04's 2.27, so the result runs on the
+          # hosts that cannot use the wheels at all. It is invoked via `docker run` rather than a
+          # job `container:`, because GitHub's JS actions need node24 and therefore glibc >= 2.28,
+          # which that image deliberately predates. Checkout runs on the host instead.
           - name: linux-amd64
             runs-on: ubuntu-latest
-            container: quay.io/pypa/manylinux2014_x86_64
+            image: quay.io/pypa/manylinux2014_x86_64
             tle: linux_amd64
           - name: linux-arm64
             runs-on: ubuntu-24.04-arm
-            container: quay.io/pypa/manylinux2014_aarch64
+            image: quay.io/pypa/manylinux2014_aarch64
             tle: linux_arm64
           - name: macos-arm64
             runs-on: macos-14
-            container: ''
+            image: ''
             tle: darwin_arm64
     steps:
       - uses: actions/checkout@v6
 
-      - name: Select Python (manylinux container)
-        if: matrix.container != ''
-        run: echo "/opt/python/cp312-cp312/bin" >> "$GITHUB_PATH"
-
       - name: Set up Python (macOS)
-        if: matrix.container == ''
+        if: matrix.image == ''
         uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install build dependencies
-        run: python -m pip install --quiet pyinstaller httpx keyring pynacl
+      - name: Build inside manylinux
+        if: matrix.image != ''
+        run: |
+          docker run --rm -v "$PWD":/io -w /io "${{ matrix.image }}" \
+            bash scripts/build_binary.sh "${{ matrix.tle }}"
 
-      - name: Fetch the pinned tle binary
-        run: python scripts/build_wheels.py --fetch-only ${{ matrix.tle }}
+      - name: Build natively
+        if: matrix.image == ''
+        run: bash scripts/build_binary.sh "${{ matrix.tle }}"
 
-      - name: Build the standalone executable
-        env:
-          TIMESAFE_TLE_BIN: build/tle-bin/tle
-        run: pyinstaller --clean --noconfirm timesafe.spec
-
+      # Run on the host, not in the container: proves the artifact works outside its build
+      # environment, which is the whole point of freezing it.
       - name: Smoke-test the executable
-        run: python scripts/smoke_test.py binary ./dist/timesafe
+        run: python3 scripts/smoke_test.py binary ./dist/timesafe
+
+      - name: Report the glibc floor
+        if: matrix.image != ''
+        run: |
+          objdump -T dist/timesafe 2>/dev/null | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -5 \
+            || echo "(objdump unavailable)"
 
       - name: Name the artifact
         run: mv dist/timesafe "dist/timesafe-${{ matrix.name }}"
