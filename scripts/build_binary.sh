@@ -3,33 +3,36 @@
 #
 #   scripts/build_binary.sh linux_amd64
 #
-# On Linux this is meant to run *inside* a manylinux2014 container (glibc 2.17), so the result runs
-# on anything from Ubuntu 18.04 onward. The container is invoked with `docker run` rather than a job
-# `container:` because GitHub's JS actions need node24, which needs glibc >= 2.28 — newer than the
-# image we deliberately target. Checkout happens on the host; only the build happens in here.
+# Uses a uv-managed CPython (python-build-standalone), which ships libpython as a shared library.
+# PyInstaller requires that, and manylinux's own interpreters are static-only — so the obvious
+# "build in manylinux2014 for an old glibc" approach cannot work without compiling CPython first.
 #
-# On macOS it runs natively against whatever Python is on PATH.
+# The glibc floor is therefore not guaranteed by the build image; it is *verified* afterwards by
+# scripts/check_glibc_floor.py, which fails the build if the result needs anything newer than the
+# oldest host we support.
 
 set -euo pipefail
 
 TLE_TARGET="${1:?usage: build_binary.sh <goos_goarch>, e.g. linux_amd64}"
+VENV="${PWD}/build/venv"
 
-# manylinux images ship their interpreters outside the default PATH.
-if [ -d /opt/python/cp312-cp312/bin ]; then
-    export PATH="/opt/python/cp312-cp312/bin:$PATH"
-fi
+command -v uv >/dev/null || { echo "uv is required (https://docs.astral.sh/uv/)" >&2; exit 1; }
 
-echo "==> python: $(command -v python) ($(python --version 2>&1))"
+echo "==> creating an isolated build environment"
+rm -rf "${VENV}"
+uv venv --python 3.12 "${VENV}"
+export VIRTUAL_ENV="${VENV}"
+PYTHON="${VENV}/bin/python"
 
-python -m pip install --quiet --upgrade pip
-python -m pip install --quiet pyinstaller httpx keyring pynacl
+uv pip install --quiet --python "${PYTHON}" pyinstaller httpx keyring pynacl
+echo "==> python: $("${PYTHON}" --version)"
 
 echo "==> fetching tle for ${TLE_TARGET}"
-python scripts/build_wheels.py --fetch-only "${TLE_TARGET}"
+"${PYTHON}" scripts/build_wheels.py --fetch-only "${TLE_TARGET}"
 
-echo "==> building"
-TIMESAFE_TLE_BIN=build/tle-bin/tle python -m PyInstaller --clean --noconfirm timesafe.spec
+echo "==> freezing"
+TIMESAFE_TLE_BIN=build/tle-bin/tle "${PYTHON}" -m PyInstaller \
+    --clean --noconfirm --distpath dist --workpath build/pyi timesafe.spec
 
-# The container runs as root; leave the artifact readable and runnable from the host job.
 chmod 0755 dist/timesafe
-echo "==> built dist/timesafe"
+echo "==> built dist/timesafe ($(du -h dist/timesafe | cut -f1))"

@@ -17,6 +17,8 @@ permissions:
 
 env:
   PYTHON_VERSION: '3.12'
+  # The oldest host the standalone binary must start on: Ubuntu 18.04 ships glibc 2.27.
+  GLIBC_FLOOR: '2.27'
 
 jobs:
   test:
@@ -66,51 +68,34 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # manylinux2014 is glibc 2.17 — older than Ubuntu 18.04's 2.27, so the result runs on the
-          # hosts that cannot use the wheels at all. It is invoked via `docker run` rather than a
-          # job `container:`, because GitHub's JS actions need node24 and therefore glibc >= 2.28,
-          # which that image deliberately predates. Checkout runs on the host instead.
           - name: linux-amd64
             runs-on: ubuntu-latest
-            image: quay.io/pypa/manylinux2014_x86_64
             tle: linux_amd64
           - name: linux-arm64
             runs-on: ubuntu-24.04-arm
-            image: quay.io/pypa/manylinux2014_aarch64
             tle: linux_arm64
           - name: macos-arm64
             runs-on: macos-14
-            image: ''
             tle: darwin_arm64
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set up Python (macOS)
-        if: matrix.image == ''
-        uses: actions/setup-python@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Build inside manylinux
-        if: matrix.image != ''
-        run: |
-          docker run --rm -v "$PWD":/io -w /io "${{ matrix.image }}" \
-            bash scripts/build_binary.sh "${{ matrix.tle }}"
-
-      - name: Build natively
-        if: matrix.image == ''
+      - name: Build the standalone executable
         run: bash scripts/build_binary.sh "${{ matrix.tle }}"
 
-      # Run on the host, not in the container: proves the artifact works outside its build
-      # environment, which is the whole point of freezing it.
       - name: Smoke-test the executable
         run: python3 scripts/smoke_test.py binary ./dist/timesafe
 
-      - name: Report the glibc floor
-        if: matrix.image != ''
-        run: |
-          objdump -T dist/timesafe 2>/dev/null | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -5 \
-            || echo "(objdump unavailable)"
+      # The build image does not guarantee the glibc floor, so verify it rather than assume it.
+      # This binary exists for hosts too old for the wheels; Ubuntu 18.04 is glibc 2.27.
+      - name: Verify it will run on old hosts
+        if: runner.os == 'Linux'
+        run: python3 scripts/check_glibc_floor.py dist/timesafe "${{ env.GLIBC_FLOOR }}"
 
       - name: Name the artifact
         run: mv dist/timesafe "dist/timesafe-${{ matrix.name }}"
