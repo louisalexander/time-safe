@@ -1,5 +1,7 @@
+import json
 from datetime import datetime, timedelta, timezone
 
+import httpx
 import pytest
 
 from tests.fakes import FailingGitHub, FakeGitHub
@@ -101,6 +103,58 @@ def test_a_failed_write_never_echoes_the_plaintext(faked):
         api.add(name="n", duration="1d", secret=SECRET, vault=Vault(gh))
     assert SECRET not in str(exc.value)
     assert SECRET not in repr(exc.value.to_json())
+
+
+def test_a_failed_write_reports_the_status_code_and_path(faked):
+    """'(HTTPStatusError)' tells an operator nothing. The status and path cost no secrecy."""
+    gh = _http_failing(403, ".github/workflows/unlock-x.yml")
+    with pytest.raises(VaultError) as exc:
+        api.add(name="n", duration="1d", secret=SECRET, vault=Vault(gh))
+
+    message = str(exc.value)
+    assert "403" in message
+    assert ".github/workflows/" in message
+
+
+def test_a_403_on_the_workflow_path_names_the_missing_scope(faked):
+    # Every add writes a per-secret workflow, so a contents-only token fails here and nowhere else.
+    gh = _http_failing(403, ".github/workflows/unlock-x.yml")
+    with pytest.raises(VaultError) as exc:
+        api.add(name="n", duration="1d", secret=SECRET, vault=Vault(gh))
+    assert "workflow" in str(exc.value).lower()
+    assert "scope" in str(exc.value).lower()
+
+
+def test_a_403_elsewhere_does_not_blame_the_workflow_scope(faked):
+    gh = _http_failing(403, "vault/secrets/x.tle")
+    with pytest.raises(VaultError) as exc:
+        api.add(name="n", duration="1d", secret=SECRET, vault=Vault(gh))
+    assert "scope" not in str(exc.value).lower()
+
+
+def test_the_http_failure_message_still_never_contains_the_plaintext(faked):
+    gh = _http_failing(403, ".github/workflows/unlock-x.yml")
+    with pytest.raises(VaultError) as exc:
+        api.add(name="n", duration="1d", secret=SECRET, vault=Vault(gh))
+    assert SECRET not in str(exc.value)
+    assert SECRET not in json.dumps(exc.value.to_json())
+
+
+def _http_failing(status: int, path_suffix: str):
+    """A FakeGitHub whose put_file raises a real httpx.HTTPStatusError for one path."""
+
+    class HttpFailingGitHub(FakeGitHub):
+        def put_file(self, path, content, message):
+            if path.endswith(path_suffix.rsplit("/", 1)[-1]) or path.startswith(
+                path_suffix.rsplit("/", 1)[0]
+            ):
+                request = httpx.Request("PUT", f"https://api.github.com/repos/o/r/contents/{path}")
+                raise httpx.HTTPStatusError(
+                    "boom", request=request, response=httpx.Response(status, request=request)
+                )
+            super().put_file(path, content, message)
+
+    return HttpFailingGitHub()
 
 
 def test_cleanup_removes_the_workflow_too(faked):

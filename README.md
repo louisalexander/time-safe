@@ -87,6 +87,10 @@ curl -sL https://github.com/louisalexander/time-safe/releases/latest/download/ti
 
 Point it at a vault with two environment variables, then:
 
+> **Token scopes:** `contents` **and** `workflow` write are both required — time-safe writes a
+> per-secret workflow file on *every* `add`, not just when using email delivery. A `contents`-only
+> token fails with a 403 on `.github/workflows/…`.
+
 ```bash
 export TIMESAFE_VAULT=me/my-vault TIMESAFE_GITHUB_TOKEN=ghp_...
 
