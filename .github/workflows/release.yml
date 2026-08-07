@@ -1,0 +1,160 @@
+name: Release
+
+# Build every artifact on every push and PR so a broken build surfaces immediately; publish only
+# from a v* tag. PyPI has no sensible edge channel without version-bumping each commit, so the
+# split is "build always, publish on tags" rather than edge-vs-release.
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  test:
+    # The same suite ci.yml runs — nothing publishes unless it is green.
+    uses: ./.github/workflows/ci.yml
+
+  wheels:
+    name: Wheels + sdist
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Sync dependencies
+        run: uv sync
+
+      # One runner builds all four: the wheel is pure Python plus a downloaded binary, so the only
+      # per-target work is fetching the right `tle` and retagging.
+      - name: Build platform wheels
+        run: uv run python scripts/build_wheels.py --outdir dist
+
+      - name: Build sdist
+        run: uv build --sdist --out-dir dist
+
+      - name: Smoke-test the linux wheel in a clean environment
+        # Run from /tmp so `import timesafe` resolves to the installed wheel, not the source tree.
+        run: |
+          python -m venv /tmp/smoke
+          /tmp/smoke/bin/pip install --quiet dist/*manylinux2014_x86_64.whl
+          cd /tmp && /tmp/smoke/bin/python "$GITHUB_WORKSPACE/scripts/smoke_test.py" wheel
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels
+          path: dist/*
+
+  binaries:
+    name: Standalone ${{ matrix.name }}
+    needs: test
+    runs-on: ${{ matrix.runs-on }}
+    container: ${{ matrix.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # manylinux2014 is glibc 2.17 — older than Ubuntu 18.04's 2.27, so the result runs on
+          # the hosts that cannot use the wheels at all.
+          - name: linux-amd64
+            runs-on: ubuntu-latest
+            container: quay.io/pypa/manylinux2014_x86_64
+            tle: linux_amd64
+          - name: linux-arm64
+            runs-on: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux2014_aarch64
+            tle: linux_arm64
+          - name: macos-arm64
+            runs-on: macos-14
+            container: ''
+            tle: darwin_arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Python (manylinux container)
+        if: matrix.container != ''
+        run: echo "/opt/python/cp312-cp312/bin" >> "$GITHUB_PATH"
+
+      - name: Set up Python (macOS)
+        if: matrix.container == ''
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install build dependencies
+        run: python -m pip install --quiet pyinstaller httpx keyring pynacl
+
+      - name: Fetch the pinned tle binary
+        run: python scripts/build_wheels.py --fetch-only ${{ matrix.tle }}
+
+      - name: Build the standalone executable
+        env:
+          TIMESAFE_TLE_BIN: build/tle-bin/tle
+        run: pyinstaller --clean --noconfirm timesafe.spec
+
+      - name: Smoke-test the executable
+        run: python scripts/smoke_test.py binary ./dist/timesafe
+
+      - name: Name the artifact
+        run: mv dist/timesafe "dist/timesafe-${{ matrix.name }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.name }}
+          path: dist/timesafe-${{ matrix.name }}
+
+  publish-pypi:
+    name: Publish to PyPI
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [wheels, binaries]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      # Trusted publishing (OIDC) — no API token is stored in this repository.
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheels
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    name: Attach binaries to the release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [wheels, binaries]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: binaries
+          merge-multiple: true
+
+      - name: Checksum the binaries
+        working-directory: binaries
+        run: |
+          chmod +x timesafe-*
+          sha256sum timesafe-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: binaries/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true

@@ -31,7 +31,16 @@ a = Analysis(
     # Landing at the bundle root makes it sys._MEIPASS/tle, which tle_path() looks for.
     binaries=[(tle_binary, ".")],
     datas=[],
-    hiddenimports=["keyring.backends.fail", "keyring.backends.null"],
+    hiddenimports=[
+        # pynacl (via vault/github/secrets_api.py) is a cffi extension, and PyInstaller does not
+        # discover its native backend on its own — without this the binary dies on first import.
+        "cffi",
+        "_cffi_backend",
+        # keyring picks its backend dynamically; the CLI must degrade to "no keychain" on a
+        # headless box rather than fail to import.
+        "keyring.backends.fail",
+        "keyring.backends.null",
+    ],
     excludes=[
         "textual",
         "rich",

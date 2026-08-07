@@ -130,11 +130,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--target", action="append", choices=sorted(TARGETS), help="repeatable")
     parser.add_argument("--outdir", default=str(REPO_ROOT / "dist"))
     parser.add_argument("--list", action="store_true", help="print the target table and exit")
+    parser.add_argument(
+        "--fetch-only",
+        metavar="<goos_goarch>",
+        help="just download and verify tle for one target (the standalone build uses this)",
+    )
+    parser.add_argument("--fetch-dir", default=str(REPO_ROOT / "build" / "tle-bin"))
     args = parser.parse_args(argv)
 
     if args.list:
         for tag, goos in sorted(TARGETS.items()):
             print(f"{tag}\t{asset_name(goos)}")
+        return 0
+
+    if args.fetch_only:
+        print(fetch_tle(args.fetch_only, Path(args.fetch_dir)))
         return 0
 
     outdir = Path(args.outdir)

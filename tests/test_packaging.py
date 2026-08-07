@@ -125,6 +125,13 @@ def test_the_binary_spec_excludes_textual():
     assert '"textual"' in spec.split("excludes=")[1].split("]")[0]
 
 
+def test_the_binary_spec_declares_the_cffi_backend():
+    """pynacl is a cffi extension; without this hidden import the frozen binary dies on import."""
+    spec = (REPO_ROOT / "timesafe.spec").read_text()
+    hidden = spec.split("hiddenimports=")[1].split("]")[0]
+    assert '"_cffi_backend"' in hidden
+
+
 def test_the_binary_spec_bundles_tle_at_the_bundle_root():
     # tle_path() looks for sys._MEIPASS/tle, so the destination must be ".".
     spec = (REPO_ROOT / "timesafe.spec").read_text()
