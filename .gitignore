@@ -221,3 +221,7 @@ build/
 
 # Vendored per-target `tle` binary, fetched at build time by scripts/build_wheels.py
 timesafe/_bin/
+
+# Agent tooling scratch (Claude Code worktrees, superpowers session state)
+.claude/
+.superpowers/
