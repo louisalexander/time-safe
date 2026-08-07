@@ -72,6 +72,52 @@ In the app:
 | `r` | **renew** — re-lock a ready secret for a new duration |
 | `x` | delete · `g` re-link Gmail · `q` quit |
 
+## 🤖 Scripting it (non-interactive CLI)
+
+Alongside the TUI there's a CLI for other programs to drive — no TTY, no prompts, works from cron or a
+systemd unit. Bare `timesafe` still opens the TUI.
+
+```bash
+uv tool install timesafe        # wheels bundle the `tle` binary — nothing else to fetch
+
+# ...or, on a host with no usable modern Python (no pip, no venv, no container):
+curl -sL https://github.com/louisalexander/time-safe/releases/latest/download/timesafe-linux-amd64 \
+  -o ~/.local/bin/timesafe && chmod +x ~/.local/bin/timesafe
+```
+
+Point it at a vault with two environment variables, then:
+
+```bash
+export TIMESAFE_VAULT=me/my-vault TIMESAFE_GITHUB_TOKEN=ghp_...
+
+# Generate a secret and lock it — never on screen, never in argv, never in shell history.
+openssl rand -base64 32 | timesafe add --name break-glass --duration 10d --secret-stdin
+# {"id":"3f2a91c4-...","name":"break-glass","unlock_at":"2026-08-17T12:00:00+00:00",
+#  "round":19273645,"vault_path":"vault/secrets/3f2a91c4-....tle","pushed":true}
+
+timesafe status --id "$ID" --json      # {"ready":false,"seconds_remaining":863995,...}
+timesafe reveal --id "$ID"             # plaintext only, no trailing newline; exit 3 if not yet
+timesafe list --json
+timesafe init --vault me/new-vault --name seedbox --create   # idempotent; always private
+```
+
+| Exit | Meaning |
+|---|---|
+| `0` | ok |
+| `2` | usage error |
+| `3` | **not yet unlockable** — distinct from a failure, so callers can poll |
+| `4` | vault / network error |
+| `5` | no such secret |
+
+Errors are JSON on stderr with a stable `code` field. The same logic is importable — `timesafe.api.add
+/ status / reveal / list_secrets / init` — if you'd rather skip the subprocess.
+
+> **Persist the `id` that `add` returns.** It's the vault's authoritative key. Secret **names are not
+> unique** and nothing enforces it, so never construct an id from a name; `--name` lookup exists as a
+> convenience and fails loudly if it's ambiguous.
+
+📖 Full reference, including cron/systemd examples: **[CLI & automation](https://louisalexander.github.io/time-safe/cli/)**
+
 ## 📧 Gmail delivery (one-time, optional)
 
 Email uses **your own** Google Cloud OAuth client:

@@ -2,6 +2,12 @@
 
 Run with `uv run timesafe`. Everything is keyboard-driven; the footer shows the keys for the current screen.
 
+!!! tip "Driving time-safe from another program?"
+
+    This page covers the interactive TUI. For scripting — cron, systemd, or another program — see the
+    [CLI & automation reference](cli.md), which documents every command, its JSON output, and the
+    exit codes.
+
 ## Vaults (home)
 
 ![vaults](screenshots/01-vault-picker.svg)
