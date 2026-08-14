@@ -72,13 +72,10 @@ class TimeSafeApp(App):
             return
         self.push_screen(SecretsListScreen(self.make_vault(ref.repo, token), ref))
 
+    def make_github(self, repo: str, token: str) -> GitHubClient:
+        """Build a GitHub client for a repo+token. Overridable in tests to inject a fake."""
+        return GitHubClient(repo, token)
+
     def make_vault(self, repo: str, token: str) -> Vault:
         """Build a Vault for a repo+token. Overridable in tests to inject a fake."""
-        return Vault(GitHubClient(repo, token))
-
-    def register_vault(self, name: str, repo: str, token: str) -> None:
-        """Persist a vault: reload+merge (resilient to other instances), save, then keychain."""
-        self.registry.reload()  # pick up anything another instance wrote
-        self.registry.add(VaultRef(name, repo))
-        self.registry.save()
-        self.credentials.put(repo, token)
+        return Vault(self.make_github(repo, token))

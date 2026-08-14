@@ -38,8 +38,8 @@ def test_is_valid_repo():
 
 # ── the screens still expose these, so the TUI keeps working ─────────────────
 def test_screens_reexport_the_same_objects():
-    from timesafe.screens import add_secret, init_vault
+    from timesafe.screens import add_secret, add_vault
 
     assert add_secret.parse_duration is parse_duration
     assert add_secret.is_valid_email is is_valid_email
-    assert init_vault.is_valid_repo is is_valid_repo
+    assert add_vault.is_valid_repo is is_valid_repo

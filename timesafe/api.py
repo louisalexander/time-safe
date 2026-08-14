@@ -502,7 +502,9 @@ def init(
         if not client.repo_exists():
             if not create:
                 raise VaultError(
-                    f"{repo} does not exist. Pass --create to make it, or create it yourself first."
+                    f"{repo} does not exist. Pass --create to make it, or create it yourself first.",
+                    # Flagged rather than string-matched, so the TUI can point at its own checkbox.
+                    repo_missing=True,
                 )
             client.create_repo()
             created = True

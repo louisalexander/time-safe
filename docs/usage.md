@@ -15,8 +15,7 @@ Run with `uv run timesafe`. Everything is keyboard-driven; the footer shows the 
 | Key | Action |
 |---|---|
 | `↵` | open the highlighted vault |
-| `n` | initialize a **new** vault (name, repo, token) → then optionally link Gmail |
-| `c` | **connect** to an already-initialized vault |
+| `n` | **add a vault** (name, repo, token, and whether to create the repo). Creates and/or initializes it if needed, or just registers one another machine already set up → then optionally link Gmail |
 | `r` | remove the highlighted vault from your local list (the GitHub repo is untouched) |
 | `q` | quit |
 
@@ -24,7 +23,7 @@ Run with `uv run timesafe`. Everything is keyboard-driven; the footer shows the 
 
 ![secrets](screenshots/02-secrets-list.svg)
 
-Each row shows a live countdown, or **● ready** (green) once unlocked.
+Each row shows a live countdown (or **● ready**, green, once unlocked), an **✉** if the secret will email itself on unlock, and the absolute unlock time.
 
 | Key | Action |
 |---|---|
@@ -44,6 +43,7 @@ Actions appear only when a secret is **ready**:
 | `d` | **Reveal** — decrypt locally and display the plaintext | ready |
 | `s` | **Email it** — trigger the workflow to decrypt at T and email the plaintext | ready, and a delivery email is set |
 | `r` | **Renew lock** — re-lock for a new duration (decrypts now, re-encrypts to a new round) | ready |
+| `c` | **Copy id** — the id `timesafe reveal --id` wants; names are not unique, ids are | always |
 | `x` | **Delete** | always |
 | `esc` | back | always |
 
