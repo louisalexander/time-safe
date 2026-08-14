@@ -319,6 +319,38 @@ def test_link_gmail_without_the_client_secret_in_the_environment_exits_two(env):
     assert b"TIMESAFE_OAUTH_CLIENT_SECRET" in proc.stderr
 
 
+# ── retry ────────────────────────────────────────────────────────────────────
+def test_a_read_survives_a_transient_5xx(env, github):
+    """The point of the whole retry layer: one blip must not fail an unattended break-glass check."""
+    added = _add(env)
+    github.fail_next_reads(1)
+
+    proc = run(env, ["status", "--id", added["id"], "--json"])
+
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(proc.stdout)["id"] == added["id"]
+
+
+def test_no_retry_fails_on_the_first_transient_5xx(env, github):
+    _add(env)
+    github.fail_next_reads(1)
+
+    proc = run(env, ["status", "--json", "--no-retry"])
+
+    assert proc.returncode == 4
+    assert json.loads(proc.stderr)["code"] == "vault"
+
+
+def test_a_persistent_5xx_still_fails_rather_than_retrying_forever(env, github):
+    _add(env)
+    github.fail_next_reads(50)
+
+    proc = run(env, ["status", "--json"])
+
+    assert proc.returncode == 4
+    assert json.loads(proc.stderr)["code"] == "vault"
+
+
 def _set_delivery_email(github, secret_id, email):
     path = f"vault/secrets/{secret_id}.meta"
     meta = json.loads(github.files[path].decode())

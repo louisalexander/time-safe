@@ -34,9 +34,14 @@ class _State:
         self.files: dict[str, bytes] = {}
         self.actions_secrets: dict[str, str] = {}
         self.dispatched: list[tuple[str, str]] = []
+        # Transient GET failures to serve before behaving normally again, for the retry tests.
+        self.failures: list[int] = []
 
     def sha(self, path: str) -> str:
         return hashlib.sha1(path.encode()).hexdigest()
+
+    def take_failure(self) -> int | None:
+        return self.failures.pop(0) if self.failures else None
 
 
 def _handler(state: _State):
@@ -59,6 +64,9 @@ def _handler(state: _State):
             return self.path.split(prefix, 1)[1] if prefix in self.path else ""
 
         def do_GET(self):  # noqa: N802
+            status = state.take_failure()
+            if status is not None:
+                return self._send(status, {"message": "Server Error"})
             if self.path == f"/repos/{REPO}":
                 return self._send(200, {"default_branch": "main", "full_name": REPO})
             if self.path == "/user":
@@ -155,6 +163,10 @@ class StubGitHub:
     @property
     def dispatched(self) -> list[tuple[str, str]]:
         return self.state.dispatched
+
+    def fail_next_reads(self, count: int, status: int = 503) -> None:
+        """Answer the next `count` GETs with `status`, then behave normally again."""
+        self.state.failures.extend([status] * count)
 
     def __enter__(self) -> "StubGitHub":
         self._thread.start()

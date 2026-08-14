@@ -10,6 +10,8 @@ from typing import Any, BinaryIO
 
 from timesafe import api
 from timesafe.errors import EmptyStdinError, TimesafeError, UsageError, VaultError
+from timesafe.github import retry
+from timesafe.resolve import resolve_vault
 from timesafe.vault.vault import Vault
 
 """The non-interactive command line.
@@ -26,6 +28,12 @@ PROG = "timesafe"
 # The OAuth client secret arrives out of band, like the GitHub PAT: stdin is already carrying the
 # refresh token, and neither may go in argv where `ps` would show it.
 GMAIL_CLIENT_SECRET_ENV = "TIMESAFE_OAUTH_CLIENT_SECRET"
+
+# Commands that operate on an existing vault. `init` builds its own client from an explicit repo
+# and token, and `tui` resolves interactively.
+VAULT_COMMANDS = frozenset(
+    {"add", "status", "reveal", "list", "delete", "renew", "send", "link-gmail"}
+)
 
 
 def _version() -> str:
@@ -79,6 +87,11 @@ def build_parser(stdout: BinaryIO | None = None) -> _Parser:
         "--vault", metavar="<name|owner/repo>", help="which vault to use (else $TIMESAFE_VAULT)"
     )
     common.add_argument("--json", action="store_true", help="machine-readable output on stdout")
+    common.add_argument(
+        "--no-retry",
+        action="store_true",
+        help="fail on the first transient GitHub error instead of retrying",
+    )
 
     p_add = subparsers.add_parser(
         "add", parents=[common], help="timelock a secret read from stdin"
@@ -366,7 +379,13 @@ def _cmd_init(args, stdin: BinaryIO, stdout: BinaryIO) -> int:
     )
     if not token:
         raise UsageError("No token. Set TIMESAFE_GITHUB_TOKEN or pass --token-stdin.")
-    result = api.init(repo=args.vault, name=args.name, token=token, create=args.create)
+    result = api.init(
+        repo=args.vault,
+        name=args.name,
+        token=token,
+        create=args.create,
+        retries=1 if args.no_retry else retry.ATTEMPTS,
+    )
     _emit_json(stdout, result)
     return 0
 
@@ -408,6 +427,11 @@ def main(
 
         if args.command is None:
             raise UsageError("No command given. Try `timesafe --help`.")
+
+        # Resolved here rather than lazily inside api, because --no-retry is a property of the
+        # client the vault is built around. Callers using `api` directly still get the default.
+        if vault is None and args.command in VAULT_COMMANDS:
+            vault = resolve_vault(args.vault, retries=1 if args.no_retry else retry.ATTEMPTS)
 
         if args.command == "add":
             return _cmd_add(args, stdin, stdout, vault)

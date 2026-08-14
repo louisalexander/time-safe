@@ -464,6 +464,53 @@ def test_link_gmail_rejects_a_malformed_address(vault, monkeypatch):
     assert json.loads(err)["code"] == "usage"
 
 
+# ── retry ────────────────────────────────────────────────────────────────────
+def _capture_resolve(monkeypatch, vault):
+    """Record how the CLI asks for a vault, since retry is a property of the client it builds."""
+    seen = {}
+
+    def fake(selector=None, **kwargs):
+        seen.update(selector=selector, **kwargs)
+        return vault
+
+    monkeypatch.setattr("timesafe.cli.resolve_vault", fake)
+    return seen
+
+
+def test_reads_retry_by_default(vault, monkeypatch):
+    from timesafe.github import retry
+
+    seen = _capture_resolve(monkeypatch, vault)
+    assert run(["list", "--json"])[0] == 0
+    assert seen["retries"] == retry.ATTEMPTS
+
+
+def test_no_retry_asks_for_a_single_attempt(vault, monkeypatch):
+    seen = _capture_resolve(monkeypatch, vault)
+    assert run(["list", "--json", "--no-retry"])[0] == 0
+    assert seen["retries"] == 1
+
+
+def test_the_selector_is_still_passed_through(vault, monkeypatch):
+    seen = _capture_resolve(monkeypatch, vault)
+    run(["list", "--json", "--vault", "me/other"])
+    assert seen["selector"] == "me/other"
+
+
+def test_no_retry_is_accepted_by_every_vault_command(vault, monkeypatch):
+    _capture_resolve(monkeypatch, vault)
+    for argv in (
+        ["status", "--json", "--no-retry"],
+        ["list", "--json", "--no-retry"],
+        ["reveal", "--id", "nope", "--no-retry"],
+        ["delete", "--id", "nope", "--yes", "--no-retry"],
+        ["send", "--id", "nope", "--no-retry"],
+        ["renew", "--id", "nope", "--duration", "1d", "--no-retry"],
+    ):
+        code, _, err = run(argv)
+        assert code in (0, 5), (argv, err)
+
+
 # ── framing ──────────────────────────────────────────────────────────────────
 def test_help_exits_zero(vault):
     code, out, _ = run(["--help"], vault=vault)

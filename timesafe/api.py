@@ -19,6 +19,7 @@ from timesafe.errors import (
     UsageError,
     VaultError,
 )
+from timesafe.github import retry
 from timesafe.github.client import GitHubClient
 from timesafe.resolve import resolve_vault
 from timesafe.timelock import tle
@@ -470,6 +471,7 @@ def init(
     name: str,
     token: str,
     create: bool = False,
+    retries: int = retry.ATTEMPTS,
     github: Any = None,
     registry: VaultRegistry | None = None,
     credentials: CredentialStore | None = None,
@@ -485,7 +487,7 @@ def init(
     if not token:
         raise UsageError("No token supplied. Set TIMESAFE_GITHUB_TOKEN or pass --token-stdin.")
 
-    client = github if github is not None else GitHubClient(repo, token)
+    client = github if github is not None else GitHubClient(repo, token, retries=retries)
     registry = VaultRegistry.load() if registry is None else registry
     credentials = KeyringCredentialStore() if credentials is None else credentials
 
