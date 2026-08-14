@@ -9,6 +9,7 @@ from textual.app import App
 
 from timesafe.config.credentials import CredentialStore, KeyringCredentialStore
 from timesafe.config.registry import VaultRef, VaultRegistry
+from timesafe.errors import TimesafeError
 from timesafe.github.client import GitHubClient
 from timesafe.resolve import resolve_token
 from timesafe.screens.secrets_list import SecretsListScreen
@@ -61,9 +62,13 @@ class TimeSafeApp(App):
         self._close_messages_no_wait()
 
     def open_vault(self, ref: VaultRef) -> None:
-        token = self.credentials.get(ref.repo)
-        if token is None:
-            self.notify(f"No stored token for {ref.repo} — re-add the vault.", severity="error")
+        # resolve_token, not credentials.get: environment first, then the keychain. An SSH session, a
+        # container or a Linux box with no Secret Service has no keychain to read — and `keyring` may
+        # raise there rather than returning None, which used to take the whole app down.
+        try:
+            token = resolve_token(ref.repo, self.credentials, os.environ)
+        except TimesafeError as exc:
+            self.notify(exc.message, severity="error")
             return
         self.push_screen(SecretsListScreen(self.make_vault(ref.repo, token), ref))
 
