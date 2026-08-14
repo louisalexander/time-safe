@@ -533,6 +533,17 @@ def test_renew_keeps_the_delivery_email_and_rewrites_the_workflow(faked):
     assert _workflow_path(secret.id) in vault.github.files
 
 
+def test_renew_of_an_email_less_secret_still_writes_no_workflow(faked):
+    """`add` without --email writes no workflow so the token needs no `workflow` scope. Renewing
+    through the API must not quietly undo that and start demanding it."""
+    vault = _vault()
+    secret = vault.put_secret("ready", _past(), SECRET, None)
+
+    api.renew(secret_id=secret.id, duration="1d", vault=vault)
+
+    assert _workflow_path(secret.id) not in vault.github.files
+
+
 # ── send ─────────────────────────────────────────────────────────────────────
 def test_send_dispatches_the_delivery_workflow(faked):
     vault = _vault()

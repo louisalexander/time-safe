@@ -95,8 +95,9 @@ waiting for one.
 
 Reads are retried; writes are not.
 
-`get_file`, `list_dir` and `repo_exists` — the calls `status`, `reveal` and `list` are made of —
-retry up to **3 attempts** on connection errors, `5xx`, `429`, and `403` carrying a `Retry-After`.
+Every read — the metadata fetch, the ciphertext fetch, the directory listing, the repo probe — retries
+up to **3 attempts** on connection errors, `5xx`, `429`, and `403` carrying a `Retry-After`. That
+covers the single `.meta` read a `status --id` poll is made of, which is the case this exists for.
 Backoff is exponential and the total wait is capped at **10s**, because a cron job that hangs is a
 worse failure than one that exits `4` and tries again on the next tick. A `Retry-After` longer than
 that budget is not waited out at all.
@@ -230,8 +231,8 @@ Full metadata for every secret: `id`, `name`, `unlock_at`, `created_at`, `round`
 timesafe delete --id <id> --yes [--json]
 ```
 
-Removes the ciphertext, the metadata and the unlock workflow. **Irreversible** — a timelocked secret
-has no backup anywhere, so a deleted one is gone.
+Removes the ciphertext, the metadata, and the unlock workflow if the secret has one. **Irreversible**
+— a timelocked secret has no backup anywhere, so a deleted one is gone.
 
 `--yes` is required. The TUI has a confirmation dialog; a pipe has nothing to answer one with, so the
 flag *is* the confirmation. Without it: exit `2`, and nothing is touched.
@@ -264,7 +265,8 @@ drand round, push.
     is written. This is not a way to extend a lock; nothing can do that (see
     [Security](security.md)).
 
-The delivery address survives a renew, and the unlock workflow is rewritten for the new round.
+The delivery address survives a renew. The workflow embeds the unlock round, so a secret that has
+one gets it rewritten; a secret added without `--email` still has none and still gets none.
 
 ### `send`
 
