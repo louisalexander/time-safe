@@ -54,18 +54,33 @@ class Vault:
         self.github.put_file(
             f"{SECRETS_DIR}/{secret.id}.meta", secret.to_meta_json().encode(), f"lock: meta {name}"
         )
-        self.github.put_file(
-            _workflow_path(secret.id),
-            build_unlock_workflow_yaml(secret).encode(),
-            f"lock: workflow {name}",
-        )
+        # Only a secret with somewhere to deliver needs a workflow. Writing one regardless would
+        # demand the `workflow` token scope for a file whose DELIVERY_EMAIL is empty and which
+        # could therefore never usefully run. `dispatch_email` writes it on demand, so nothing
+        # downstream depends on it existing here.
+        if delivery_email:
+            self.github.put_file(
+                _workflow_path(secret.id),
+                build_unlock_workflow_yaml(secret).encode(),
+                f"lock: workflow {name}",
+            )
         return secret
+
+    def get_secret(self, secret_id: str) -> Secret | None:
+        """Fetch one secret's metadata by id, without listing the vault.
+
+        An id *is* the path, so a caller that already has one never needs the scan `list_secrets`
+        does — which costs a request per secret, on every call.
+        """
+        content = self.github.get_text_file(f"{SECRETS_DIR}/{secret_id}.meta")
+        return None if content is None else Secret.from_meta_json(content)
 
     def list_secrets(self) -> list[Secret]:
         secrets: list[Secret] = []
         for path in self.github.list_dir(SECRETS_DIR):
             if path.endswith(".meta"):
-                content = self.github.get_file(path)
+                # .meta is JSON, so it needs no blob round-trip — see get_text_file.
+                content = self.github.get_text_file(path)
                 if content is not None:
                     secrets.append(Secret.from_meta_json(content))
         secrets.sort(key=lambda s: s.created_at, reverse=True)
@@ -97,11 +112,14 @@ class Vault:
             secret.to_meta_json().encode(),
             f"renew: meta {secret.name}",
         )
-        self.github.put_file(
-            _workflow_path(secret.id),
-            build_unlock_workflow_yaml(secret).encode(),
-            f"renew: workflow {secret.name}",
-        )
+        # The workflow embeds the unlock round, so a renewed secret that has one needs it rewritten
+        # — but a secret with no delivery address still gets none, as in put_secret.
+        if secret.delivery_email:
+            self.github.put_file(
+                _workflow_path(secret.id),
+                build_unlock_workflow_yaml(secret).encode(),
+                f"renew: workflow {secret.name}",
+            )
         return secret
 
     def delete(self, secret: Secret) -> None:

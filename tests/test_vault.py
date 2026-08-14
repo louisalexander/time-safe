@@ -19,6 +19,51 @@ def test_put_secret_pushes_tle_meta_and_workflow(faked):
     assert _workflow_path(s.id) in gh.files
 
 
+def test_put_secret_without_a_delivery_email_writes_no_workflow(faked):
+    """A workflow with an empty DELIVERY_EMAIL could never usefully run, and writing one under
+    .github/workflows/ demands the `workflow` token scope for a file that is dead weight."""
+    gh = FakeGitHub()
+    s = Vault(gh).put_secret("Name", _future(), "the secret", None)
+    assert _workflow_path(s.id) not in gh.files
+
+
+def test_renew_without_a_delivery_email_writes_no_workflow(faked):
+    gh = FakeGitHub()
+    v = Vault(gh)
+    s = v.put_secret("N", _future(), "x", None)
+    v.renew(s, datetime.now(timezone.utc) + timedelta(days=60))
+    assert _workflow_path(s.id) not in gh.files
+
+
+def test_renew_with_a_delivery_email_still_rewrites_the_workflow(faked):
+    # The workflow embeds the unlock round, so a renewed secret needs it rewritten, not just kept.
+    gh = FakeGitHub()
+    v = Vault(gh)
+    s = v.put_secret("N", _future(), "x", "a@b.co")
+    gh.files.pop(_workflow_path(s.id))
+    v.renew(s, datetime.now(timezone.utc) + timedelta(days=60))
+    assert _workflow_path(s.id) in gh.files
+
+
+def test_dispatch_email_creates_the_workflow_when_none_was_written(faked):
+    """Nothing may depend on the workflow pre-existing — dispatch writes it before triggering."""
+    gh = FakeGitHub()
+    v = Vault(gh)
+    s = v.put_secret("N", _future(), "x", None)
+    s.delivery_email = "a@b.co"
+    v.dispatch_email(s)
+    assert _workflow_path(s.id) in gh.files
+    assert gh.dispatched == [(f"unlock-{s.id}.yml", "main")]
+
+
+def test_delete_is_unbothered_by_a_secret_that_has_no_workflow(faked):
+    gh = FakeGitHub()
+    v = Vault(gh)
+    s = v.put_secret("N", _future(), "x", None)
+    v.delete(s)
+    assert gh.files == {}
+
+
 def test_list_secrets_parses_meta(faked):
     gh = FakeGitHub()
     v = Vault(gh)

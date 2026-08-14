@@ -47,7 +47,7 @@ Everything comes from the environment, so nothing has to be typed.
 | Variable | Purpose |
 |---|---|
 | `TIMESAFE_VAULT` | which vault — `owner/repo`, or a name from your local vault list |
-| `TIMESAFE_GITHUB_TOKEN` | GitHub PAT — needs **`contents` *and* `workflow`** write (see below) |
+| `TIMESAFE_GITHUB_TOKEN` | GitHub PAT — needs **`contents`** write, plus **`workflow`** for `--email` (see below) |
 | `TIMESAFE_TLE` | path to a specific `tle` binary (overrides the bundled one) |
 | `TIMESAFE_GITHUB_API` | alternate API root, for GitHub Enterprise |
 | `TIMESAFE_DEBUG` | set to `1` to print an exception line on unexpected failures |
@@ -60,12 +60,12 @@ candidates, never a guess.
 what makes cron work: a headless session has no unlocked keychain, and time-safe will never block
 waiting for one.
 
-!!! danger "The `workflow` scope is required for *every* `add`"
+!!! info "`--email` needs the `workflow` scope; nothing else does"
 
-    time-safe writes one workflow file per secret (`.github/workflows/unlock-<id>.yml`), and it does
-    so on **every** `add` — not only when `--email` is given. Writing anything under
-    `.github/workflows/` requires the `workflow` scope, so a token with `contents` write alone
-    fails, and it fails only on the third of three writes:
+    An `add --email` writes a delivery workflow for that secret
+    (`.github/workflows/unlock-<id>.yml`). Writing anything under `.github/workflows/` requires the
+    `workflow` scope, so a token with `contents` write alone fails on that add — and only on the
+    last of three writes:
 
     ```json
     {"error": "Failed to write the secret. GitHub returned 403 writing
@@ -74,7 +74,10 @@ waiting for one.
     ```
 
     The `cleaned` list is the tell: `.tle` and `.meta` were written and then rolled back, so the
-    failure was on the workflow. Fix it on the token:
+    failure was on the workflow.
+
+    **If you only ever `reveal` locally — the usual automation case — `contents` write is enough.**
+    An add without `--email` writes no workflow at all. To use delivery, widen the token:
 
     - **Classic PAT** → tick `repo` *and* `workflow`.
     - **Fine-grained PAT** → Contents: Read and write, **Workflows: Read and write**.
@@ -260,6 +263,14 @@ else
     esac
 fi
 ```
+
+!!! tip "Poll by `--id`, not `--name`"
+
+    `--id` reads exactly one file, so a poll costs a constant two API requests however big the
+    vault gets. `--name` has to read every secret's metadata to resolve the name, which costs one
+    request per secret — on a vault of 50 that is 51 requests a poll, and a per-minute schedule
+    would exhaust GitHub's 5000/hr limit in under an hour. `add` returns the id for exactly this
+    reason; persist it.
 
 ### systemd
 

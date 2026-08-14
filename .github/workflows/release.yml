@@ -25,6 +25,16 @@ jobs:
     # The same suite ci.yml runs — nothing publishes unless it is green.
     uses: ./.github/workflows/ci.yml
 
+  version-guard:
+    name: Tag matches the packaged version
+    # Only tags publish, so only tags need guarding. Runs on a bare checkout in seconds, and both
+    # publishing jobs wait on it — a spent PyPI version number cannot be recovered.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: python3 scripts/check_release_tag.py "$GITHUB_REF_NAME"
+
   wheels:
     name: Wheels + sdist
     needs: test
@@ -113,7 +123,7 @@ jobs:
   publish-pypi:
     name: Publish to PyPI
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [wheels, binaries]
+    needs: [version-guard, wheels, binaries]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -125,11 +135,15 @@ jobs:
           name: wheels
           path: dist
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Re-running a release that uploaded some files and then failed must continue rather
+          # than abort on the files it already put there itself.
+          skip-existing: true
 
   github-release:
     name: Attach binaries to the release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [wheels, binaries]
+    needs: [version-guard, wheels, binaries]
     runs-on: ubuntu-latest
     permissions:
       contents: write

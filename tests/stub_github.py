@@ -58,8 +58,25 @@ def _handler(state: _State):
 
             path = self._path_after(f"/repos/{REPO}/contents/")
             if path in state.files:
+                # Model the Contents API's charset detection: UTF-8 comes back intact, binary comes
+                # back re-encoded and corrupted. That is the whole reason get_file pays for the git
+                # blob and get_text_file does not, so the stub has to reproduce it or the
+                # end-to-end tests would pass against a client that got the distinction wrong.
+                content = state.files[path]
+                try:
+                    content.decode("utf-8")
+                except UnicodeDecodeError:
+                    inlined = base64.b64encode(content.decode("latin-1").encode("utf-16")).decode()
+                else:
+                    inlined = base64.b64encode(content).decode()
                 return self._send(
-                    200, {"sha": state.sha(path), "content": "aWdub3JlZA==", "path": path}
+                    200,
+                    {
+                        "sha": state.sha(path),
+                        "content": inlined,
+                        "encoding": "base64",
+                        "path": path,
+                    },
                 )
             children = [p for p in state.files if p.startswith(path.rstrip("/") + "/")]
             if children:

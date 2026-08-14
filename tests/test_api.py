@@ -109,7 +109,7 @@ def test_a_failed_write_reports_the_status_code_and_path(faked):
     """'(HTTPStatusError)' tells an operator nothing. The status and path cost no secrecy."""
     gh = _http_failing(403, ".github/workflows/unlock-x.yml")
     with pytest.raises(VaultError) as exc:
-        api.add(name="n", duration="1d", secret=SECRET, vault=Vault(gh))
+        api.add(name="n", duration="1d", secret=SECRET, email="a@b.co", vault=Vault(gh))
 
     message = str(exc.value)
     assert "403" in message
@@ -117,12 +117,32 @@ def test_a_failed_write_reports_the_status_code_and_path(faked):
 
 
 def test_a_403_on_the_workflow_path_names_the_missing_scope(faked):
-    # Every add writes a per-secret workflow, so a contents-only token fails here and nowhere else.
+    # Only an add with --email writes a workflow, so a contents-only token fails here and nowhere
+    # else — and only for that add.
     gh = _http_failing(403, ".github/workflows/unlock-x.yml")
     with pytest.raises(VaultError) as exc:
-        api.add(name="n", duration="1d", secret=SECRET, vault=Vault(gh))
+        api.add(name="n", duration="1d", secret=SECRET, email="a@b.co", vault=Vault(gh))
     assert "workflow" in str(exc.value).lower()
     assert "scope" in str(exc.value).lower()
+
+
+def test_a_403_on_the_workflow_path_says_the_scope_is_only_needed_for_email(faked):
+    """The old message told operators the scope was mandatory for every add. It no longer is, and
+    an error that sends someone to widen a token needlessly is worse than none."""
+    gh = _http_failing(403, ".github/workflows/unlock-x.yml")
+    with pytest.raises(VaultError) as exc:
+        api.add(name="n", duration="1d", secret=SECRET, email="a@b.co", vault=Vault(gh))
+    message = str(exc.value).lower()
+    assert "--email" in message
+    assert "every add" not in message
+
+
+def test_add_without_an_email_succeeds_on_a_token_that_cannot_write_workflows(faked):
+    """The motivating bug: local-reveal-only automation had to hand over the `workflow` scope."""
+    gh = _http_failing(403, ".github/workflows/unlock-x.yml")
+    result = api.add(name="n", duration="1d", secret=SECRET, vault=Vault(gh))
+    assert result["pushed"] is True
+    assert not [p for p in gh.files if p.startswith(".github/workflows/")]
 
 
 def test_a_403_elsewhere_does_not_blame_the_workflow_scope(faked):
@@ -135,7 +155,7 @@ def test_a_403_elsewhere_does_not_blame_the_workflow_scope(faked):
 def test_the_http_failure_message_still_never_contains_the_plaintext(faked):
     gh = _http_failing(403, ".github/workflows/unlock-x.yml")
     with pytest.raises(VaultError) as exc:
-        api.add(name="n", duration="1d", secret=SECRET, vault=Vault(gh))
+        api.add(name="n", duration="1d", secret=SECRET, email="a@b.co", vault=Vault(gh))
     assert SECRET not in str(exc.value)
     assert SECRET not in json.dumps(exc.value.to_json())
 
@@ -158,9 +178,11 @@ def _http_failing(status: int, path_suffix: str):
 
 
 def test_cleanup_removes_the_workflow_too(faked):
+    # The workflow is written last and only for a delivery address, so this is the add that can
+    # strand one.
     gh = FailingGitHub(fail_on_path_suffix=".yml")
     with pytest.raises(VaultError):
-        api.add(name="n", duration="1d", secret=SECRET, vault=Vault(gh))
+        api.add(name="n", duration="1d", secret=SECRET, email="a@b.co", vault=Vault(gh))
     assert gh.files == {}
 
 
@@ -225,7 +247,95 @@ def test_an_unknown_name_is_not_found(faked):
         api.status(name="ghost", vault=_vault())
 
 
+def test_status_by_id_reads_only_that_secrets_meta(faked):
+    """A known id must not cost a vault scan. The CLI exists to be polled from cron, and a scan is
+    one request per secret against a 5000/hr limit — a 50-secret vault would die at 49 polls/hr."""
+    vault = _vault()
+    added = api.add(name="n", duration="1d", secret=SECRET, vault=vault)
+    for extra in range(4):
+        api.add(name=f"other{extra}", duration="1d", secret=SECRET, vault=vault)
+    gh = vault.github
+    gh.reads.clear()
+    gh.listings.clear()
+
+    api.status(secret_id=added["id"], vault=vault)
+
+    assert gh.listings == []
+    assert gh.reads == [f"{SECRETS_DIR}/{added['id']}.meta"]
+
+
+def test_status_by_id_stays_constant_as_the_vault_grows(faked):
+    small, large = _vault(), _vault()
+    one = api.add(name="n", duration="1d", secret=SECRET, vault=small)
+    many = api.add(name="n", duration="1d", secret=SECRET, vault=large)
+    for extra in range(20):
+        api.add(name=f"o{extra}", duration="1d", secret=SECRET, vault=large)
+
+    for vault, added in ((small, one), (large, many)):
+        vault.github.reads.clear()
+        api.status(secret_id=added["id"], vault=vault)
+
+    assert len(small.github.reads) == len(large.github.reads)
+
+
+def test_status_by_id_for_an_unknown_id_is_still_not_found(faked):
+    # Was "scanned everything, no match"; it is now a 404 on one path. Same exit code either way.
+    vault = _vault()
+    api.add(name="n", duration="1d", secret=SECRET, vault=vault)
+    with pytest.raises(NotFoundError):
+        api.status(secret_id="no-such-id", vault=vault)
+
+
+def test_status_by_name_still_scans_because_it_has_to(faked):
+    """Names aren't paths — resolving one genuinely requires reading every meta."""
+    vault = _vault()
+    api.add(name="findme", duration="1d", secret=SECRET, vault=vault)
+    vault.github.listings.clear()
+
+    assert api.status(name="findme", vault=vault)["name"] == "findme"
+    assert vault.github.listings == [SECRETS_DIR]
+
+
 # ── reveal ───────────────────────────────────────────────────────────────────
+def test_reveal_by_id_reads_only_the_meta_and_the_ciphertext(faked):
+    vault = _vault()
+    secret = vault.put_secret("ready", _past(), SECRET, None)
+    for extra in range(4):
+        vault.put_secret(f"other{extra}", _past(), SECRET, None)
+    gh = vault.github
+    gh.reads.clear()
+    gh.listings.clear()
+
+    assert api.reveal(secret_id=secret.id, vault=vault) == SECRET
+
+    assert gh.listings == []
+    assert gh.reads == [
+        f"{SECRETS_DIR}/{secret.id}.meta",
+        f"{SECRETS_DIR}/{secret.id}.tle",
+    ]
+
+
+def test_reveal_by_id_for_an_unknown_id_is_still_not_found(faked):
+    vault = _vault()
+    vault.put_secret("ready", _past(), SECRET, None)
+    with pytest.raises(NotFoundError):
+        api.reveal(secret_id="no-such-id", vault=vault)
+
+
+def test_reveal_without_a_selector_costs_no_requests_at_all(faked):
+    """A pure argument error must not reach the network first."""
+    vault = _vault()
+    api.add(name="n", duration="1d", secret=SECRET, vault=vault)
+    gh = vault.github
+    gh.reads.clear()
+    gh.listings.clear()
+
+    with pytest.raises(UsageError):
+        api.reveal(vault=vault)
+
+    assert gh.reads == [] and gh.listings == []
+
+
 def test_reveal_returns_the_plaintext_once_unlocked(faked):
     vault = _vault()
     secret = vault.put_secret("ready", _past(), SECRET, None)

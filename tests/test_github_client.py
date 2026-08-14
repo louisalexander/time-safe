@@ -33,6 +33,41 @@ def test_get_file_returns_exact_bytes_from_git_blob_not_contents():
 
 
 @respx.mock
+def test_get_text_file_reads_the_contents_response_without_a_second_request():
+    """Text survives the Contents API intact, so paying for the blob round-trip on every .meta
+    doubles the cost of every listing for nothing."""
+    path = "vault/secrets/x.meta"
+    contents = respx.get(f"{API}/repos/{REPO}/contents/{path}").respond(
+        json={"content": base64.b64encode(b'{"id": "x"}').decode(), "encoding": "base64", "sha": "s"}
+    )
+    blobs = respx.get(f"{API}/repos/{REPO}/git/blobs/s").respond(json={"content": ""})
+
+    assert _client().get_text_file(path) == b'{"id": "x"}'
+    assert contents.call_count == 1
+    assert blobs.call_count == 0
+
+
+@respx.mock
+def test_get_text_file_returns_none_on_404():
+    respx.get(f"{API}/repos/{REPO}/contents/vault/secrets/x.meta").respond(404)
+    assert _client().get_text_file("vault/secrets/x.meta") is None
+
+
+@respx.mock
+def test_get_text_file_tolerates_github_declining_to_inline_the_content():
+    """Over ~1MB the Contents API answers with encoding 'none' and an empty body. A .meta is never
+    that big, but silently returning b'' would be a corrupt secret rather than an error."""
+    path = "vault/secrets/x.meta"
+    respx.get(f"{API}/repos/{REPO}/contents/{path}").respond(
+        json={"content": "", "encoding": "none", "sha": "big"}
+    )
+    respx.get(f"{API}/repos/{REPO}/git/blobs/big").respond(
+        json={"content": base64.b64encode(b"the real bytes").decode()}
+    )
+    assert _client().get_text_file(path) == b"the real bytes"
+
+
+@respx.mock
 def test_put_file_new_sends_base64_without_sha():
     path = "vault/secrets/x.meta"
     respx.get(f"{API}/repos/{REPO}/contents/{path}").respond(404)
