@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
 
 from textual import work
 from textual.app import ComposeResult
@@ -9,6 +8,9 @@ from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Header, Input, Label
 
+from timesafe import api
+from timesafe.errors import TimesafeError
+from timesafe.screens.errors import message_of
 from timesafe.validation import parse_duration
 
 
@@ -44,13 +46,11 @@ class RenewScreen(Screen):
         except ValueError as exc:
             error.update(str(exc))
             return
-        new_unlock = datetime.now(timezone.utc) + duration
-
         from timesafe.screens.confirm import ConfirmScreen
 
         def after(confirmed: bool | None) -> None:
             if confirmed:
-                self._do_renew(new_unlock)
+                self._do_renew(duration)
 
         self.app.push_screen(
             ConfirmScreen(
@@ -62,12 +62,14 @@ class RenewScreen(Screen):
         )
 
     @work
-    async def _do_renew(self, new_unlock_at) -> None:
+    async def _do_renew(self, duration) -> None:
         error = self.query_one("#error", Label)
         try:
-            await asyncio.to_thread(self.vault.renew, self.secret, new_unlock_at)
-        except Exception as exc:  # noqa: BLE001
-            error.update(f"Failed: {exc}")
+            await asyncio.to_thread(
+                api.renew, vault=self.vault, secret=self.secret, duration=duration
+            )
+        except TimesafeError as exc:
+            error.update(message_of(exc))
             return
         self.notify(f"Re-locked {self.secret.name}")
         self.app.pop_screen()  # remove this renew screen -> back to the detail

@@ -9,7 +9,10 @@ from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import Footer, Header, Label, ListItem, ListView
 
+from timesafe import api
+from timesafe.errors import TimesafeError
 from timesafe.format import humanize_seconds
+from timesafe.screens.errors import message_of, severity_of
 from timesafe.screens.secret_detail import SecretDetailScreen
 from timesafe.vault.secret import Secret
 
@@ -59,9 +62,10 @@ class SecretsListScreen(Screen):
         status = self.query_one("#status", Label)
         status.update("Loading…")
         try:
-            self._secrets = await asyncio.to_thread(self.vault.list_secrets)
-        except Exception as exc:  # noqa: BLE001
-            status.update(f"Couldn't load secrets: {exc}")
+            self._secrets = await asyncio.to_thread(api.secrets, vault=self.vault)
+        except TimesafeError as exc:
+            status.update(message_of(exc))
+            self.notify(message_of(exc), severity=severity_of(exc))
             return
         status.update("" if self._secrets else "No secrets yet — press a to add one.")
         listview = self.query_one("#secrets", ListView)
@@ -73,7 +77,11 @@ class SecretsListScreen(Screen):
             await listview.append(ListItem(label, id=f"secret-{i}"))
 
     def _row_text(self, secret: Secret) -> str:
-        return f"{secret.name:<28} {status_text(secret)}"
+        # The metadata is already in memory, and whether a secret emails itself on unlock is the
+        # single most consequential thing about it — it should not take opening the row to find out.
+        envelope = "✉" if secret.delivery_email else " "
+        unlocks = secret.unlock_at.astimezone().strftime("%Y-%m-%d %H:%M")
+        return f"{secret.name:<28} {status_text(secret):<11} {envelope}  {unlocks}"
 
     def _tick(self) -> None:
         for secret, label in zip(self._secrets, self._row_labels):
