@@ -9,25 +9,18 @@ from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import Footer, Header, Label, ListItem, ListView
 
+from timesafe.format import humanize_seconds
 from timesafe.screens.secret_detail import SecretDetailScreen
 from timesafe.vault.secret import Secret
+
+READY = "● ready"
 
 
 def status_text(secret: Secret, now: datetime | None = None) -> str:
     now = now or datetime.now(timezone.utc)
     if secret.is_ready(now):
-        return "● ready"
-    total = int((secret.unlock_at - now).total_seconds())
-    days, rem = divmod(total, 86400)
-    hours, rem = divmod(rem, 3600)
-    mins, secs = divmod(rem, 60)
-    if days > 0:
-        return f"{days}d {hours}h {mins:02d}m"
-    if hours > 0:
-        return f"{hours}h {mins:02d}m {secs:02d}s"
-    if mins > 0:
-        return f"{mins}m {secs:02d}s"
-    return f"{secs}s"
+        return READY
+    return humanize_seconds(int((secret.unlock_at - now).total_seconds()), ready=READY)
 
 
 class SecretsListScreen(Screen):
