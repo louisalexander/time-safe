@@ -38,10 +38,32 @@ class GitHubClient:
         # The Contents API charset-detects binary files (e.g. tlock ciphertext) as UTF-16 and
         # returns them re-encoded, corrupting them. Fetch the exact bytes from the git blob instead
         # (the contents response's `sha` is the blob's object id).
-        sha = r.json()["sha"]
-        blob = self._client.get(f"/repos/{self.repo}/git/blobs/{sha}")
-        blob.raise_for_status()
-        return base64.b64decode(blob.json()["content"])
+        return self._blob(r.json()["sha"])
+
+    def get_text_file(self, path: str) -> bytes | None:
+        """Read a UTF-8 file in one request instead of two.
+
+        `get_file` pays for a second round-trip because the Contents API corrupts *binary*
+        payloads; text comes back intact, so anything textual — the `.meta` JSON — can be decoded
+        straight from the contents response. That halves the cost of every listing.
+
+        Never use this for ciphertext.
+        """
+        r = self._client.get(self._contents(path))
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+        body = r.json()
+        # Above ~1MB GitHub declines to inline the content and answers with encoding "none".
+        # A .meta is never near that, but returning b"" for it would be silent corruption.
+        if body.get("encoding") != "base64":
+            return self._blob(body["sha"])
+        return base64.b64decode(body["content"])
+
+    def _blob(self, sha: str) -> bytes:
+        r = self._client.get(f"/repos/{self.repo}/git/blobs/{sha}")
+        r.raise_for_status()
+        return base64.b64decode(r.json()["content"])
 
     def _get_sha(self, path: str) -> str | None:
         r = self._client.get(self._contents(path))

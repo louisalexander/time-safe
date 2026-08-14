@@ -17,9 +17,18 @@ class FakeGitHub:
         self.login = login
         self.exists = exists
         self.created: list[dict] = []
+        # Read accounting, so tests can assert what a command *costs*. A vault scan is one request
+        # per secret against a 5000/hr limit, and the CLI exists to be polled.
+        self.reads: list[str] = []
+        self.listings: list[str] = []
 
     # ── contents ──────────────────────────────────────────────────────────────
     def get_file(self, path):
+        self.reads.append(path)
+        return self.files.get(path)
+
+    def get_text_file(self, path):
+        self.reads.append(path)
         return self.files.get(path)
 
     def put_file(self, path, content, message):
@@ -29,6 +38,7 @@ class FakeGitHub:
         self.files.pop(path, None)
 
     def list_dir(self, path):
+        self.listings.append(path)
         return [p for p in self.files if p.startswith(path + "/")]
 
     # ── repo / workflows ──────────────────────────────────────────────────────

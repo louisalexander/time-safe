@@ -264,6 +264,14 @@ else
 fi
 ```
 
+!!! tip "Poll by `--id`, not `--name`"
+
+    `--id` reads exactly one file, so a poll costs a constant two API requests however big the
+    vault gets. `--name` has to read every secret's metadata to resolve the name, which costs one
+    request per secret — on a vault of 50 that is 51 requests a poll, and a per-minute schedule
+    would exhaust GitHub's 5000/hr limit in under an hour. `add` returns the id for exactly this
+    reason; persist it.
+
 ### systemd
 
 ```ini

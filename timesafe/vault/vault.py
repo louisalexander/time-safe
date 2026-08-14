@@ -66,11 +66,21 @@ class Vault:
             )
         return secret
 
+    def get_secret(self, secret_id: str) -> Secret | None:
+        """Fetch one secret's metadata by id, without listing the vault.
+
+        An id *is* the path, so a caller that already has one never needs the scan `list_secrets`
+        does — which costs a request per secret, on every call.
+        """
+        content = self.github.get_text_file(f"{SECRETS_DIR}/{secret_id}.meta")
+        return None if content is None else Secret.from_meta_json(content)
+
     def list_secrets(self) -> list[Secret]:
         secrets: list[Secret] = []
         for path in self.github.list_dir(SECRETS_DIR):
             if path.endswith(".meta"):
-                content = self.github.get_file(path)
+                # .meta is JSON, so it needs no blob round-trip — see get_text_file.
+                content = self.github.get_text_file(path)
                 if content is not None:
                     secrets.append(Secret.from_meta_json(content))
         secrets.sort(key=lambda s: s.created_at, reverse=True)

@@ -25,13 +25,16 @@ STUB_TLE = textwrap.dedent(
     import sys
     args = sys.argv[1:]
     data = sys.stdin.buffer.read()
+    # The marker is deliberately not valid UTF-8: real tlock ciphertext is binary, and the stub
+    # GitHub reproduces the Contents API's habit of mangling anything that isn't text. Keeping the
+    # ciphertext genuinely binary is what makes these tests notice if a read stops being byte-exact.
     if "-e" in args:
-        sys.stdout.buffer.write(b"CT:" + data)
+        sys.stdout.buffer.write(b"CT:\\xff\\x00" + data)
     elif "-d" in args:
-        if not data.startswith(b"CT:"):
+        if not data.startswith(b"CT:\\xff\\x00"):
             sys.stderr.write("too early to decrypt")
             sys.exit(1)
-        sys.stdout.buffer.write(data[3:])
+        sys.stdout.buffer.write(data[5:])
     sys.exit(0)
     """
 )

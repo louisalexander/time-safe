@@ -70,29 +70,45 @@ def _as_duration(duration: str | timedelta) -> timedelta:
         raise UsageError(str(exc)) from None
 
 
-def _find(secrets: Iterable[Secret], secret_id: str | None, name: str | None) -> Secret:
-    """Resolve a secret by id, or by name when that name is unambiguous.
+NO_SELECTOR = "Specify a secret with --id (preferred) or --name."
+
+
+def _find_by_name(secrets: Iterable[Secret], name: str) -> Secret:
+    """Resolve a secret by name, when that name is unambiguous.
 
     Names are not unique — nothing in the vault enforces it, and the TUI will happily create two
     secrets with the same label — so a duplicate name is an error, never a silent pick.
     """
-    secrets = list(secrets)
+    matches = [s for s in secrets if s.name == name]
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        raise NotFoundError(f"No secret named {name!r}.")
+    raise AmbiguousNameError(
+        f"{len(matches)} secrets are named {name!r}; look them up by id instead.",
+        ids=sorted(s.id for s in matches),
+    )
+
+
+def _lookup(vault: Vault, secret_id: str | None, name: str | None) -> Secret:
+    """Fetch one secret, scanning the vault only when the lookup genuinely needs it.
+
+    An id is the path to its own `.meta`, so it costs a constant two requests. A name is not — it
+    can only be resolved by reading every `.meta`, at a request per secret. That difference decides
+    whether a per-minute cron poll fits inside the 5000/hr rate limit, so the two paths stay apart.
+    """
+    if not secret_id and not name:
+        raise UsageError(NO_SELECTOR)
+
     if secret_id:
-        for s in secrets:
-            if s.id == secret_id:
-                return s
-        raise NotFoundError(f"No secret with id {secret_id}.")
-    if name:
-        matches = [s for s in secrets if s.name == name]
-        if len(matches) == 1:
-            return matches[0]
-        if not matches:
-            raise NotFoundError(f"No secret named {name!r}.")
-        raise AmbiguousNameError(
-            f"{len(matches)} secrets are named {name!r}; look them up by id instead.",
-            ids=sorted(s.id for s in matches),
-        )
-    raise UsageError("Specify a secret with --id (preferred) or --name.")
+        with _github_errors("could not read the secret"):
+            found = vault.get_secret(secret_id)
+        if found is None:
+            raise NotFoundError(f"No secret with id {secret_id}.")
+        return found
+
+    with _github_errors("could not list the vault"):
+        return _find_by_name(vault.list_secrets(), name)
 
 
 def _seconds_remaining(secret: Secret, now: datetime | None = None) -> int:
@@ -213,12 +229,11 @@ def status(
     cryptographic one; near the boundary they can disagree by a drand round (~3s).
     """
     v = _vault_for(vault, selector)
-    with _github_errors("could not list the vault"):
-        secrets = v.list_secrets()
-
     if secret_id or name:
-        return _status_row(_find(secrets, secret_id, name), now)
-    return [_status_row(s, now) for s in secrets]
+        return _status_row(_lookup(v, secret_id, name), now)
+
+    with _github_errors("could not list the vault"):
+        return [_status_row(s, now) for s in v.list_secrets()]
 
 
 def _status_row(secret: Secret, now: datetime | None = None) -> dict[str, Any]:
@@ -271,9 +286,7 @@ def reveal(
     fetching the ciphertext at all, and tlock's own refusal, which catches clock skew.
     """
     v = _vault_for(vault, selector)
-    with _github_errors("could not list the vault"):
-        secrets = v.list_secrets()
-    secret = _find(secrets, secret_id, name)
+    secret = _lookup(v, secret_id, name)
 
     remaining = _seconds_remaining(secret, now)
     if not secret.is_ready(now):
