@@ -426,8 +426,14 @@ def send(
 
 
 # ── gmail ────────────────────────────────────────────────────────────────────
-GMAIL_SECRET_NAMES = ["GMAIL_ADDRESS", "OAUTH_CLIENT_ID", "OAUTH_CLIENT_SECRET",
-                      "GMAIL_REFRESH_TOKEN"]
+# Reported back so a provisioning script can confirm what landed. Kept in step with
+# Vault.relink_gmail by test_link_gmail_seals_the_four_actions_secrets, which compares the two.
+GMAIL_SECRET_NAMES = (
+    "GMAIL_ADDRESS",
+    "OAUTH_CLIENT_ID",
+    "OAUTH_CLIENT_SECRET",
+    "GMAIL_REFRESH_TOKEN",
+)
 
 
 def link_gmail(

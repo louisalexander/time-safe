@@ -603,6 +603,8 @@ def test_link_gmail_seals_the_four_actions_secrets(faked):
         "OAUTH_CLIENT_SECRET",
         "GMAIL_REFRESH_TOKEN",
     }
+    # The reported names must be what was really written, not a list that can drift from it.
+    assert set(result["secrets"]) == set(gh.secrets)
 
 
 def test_link_gmail_reports_the_secret_names_but_never_their_values(faked):
