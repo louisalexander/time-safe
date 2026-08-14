@@ -1,6 +1,16 @@
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from timesafe.config.registry import VaultRef
+from timesafe.errors import (
+    NetworkError,
+    NotFoundError,
+    NotReadyError,
+    UsageError,
+    VaultError,
+)
+from timesafe.screens.errors import message_of, severity_of
 from timesafe.screens.secret_detail import visible_actions
 from timesafe.screens.secrets_list import SecretsListScreen, status_text
 from timesafe.vault.secret import Secret
@@ -66,6 +76,31 @@ def test_a_row_marks_a_secret_that_will_email_itself():
     """Whether a secret delivers on unlock is its most consequential fact, and it was invisible."""
     assert "✉" in _row(_secret(ready=False, email="a@b.co"))
     assert "✉" not in _row(_secret(ready=False, email=None))
+
+
+# ── typed errors → what the TUI says ─────────────────────────────────────────
+@pytest.mark.parametrize(
+    "exc, severity",
+    [
+        (NotReadyError("wait"), "warning"),  # nothing is wrong
+        (NetworkError("blip"), "warning"),  # the vault is fine; retry
+        (NotFoundError("gone"), "warning"),  # refresh the list
+        (VaultError("bad scope"), "error"),  # the user has to fix something
+        (UsageError("no address"), "error"),
+    ],
+)
+def test_severity_follows_the_error_code(exc, severity):
+    assert severity_of(exc) == severity
+
+
+def test_a_not_ready_error_says_how_long_the_wait_is():
+    """'Ready in 4m 12s' is actionable; 'not unlocked yet' is not."""
+    exc = NotReadyError("Locked.", id="x", seconds_remaining=252)
+    assert message_of(exc) == "Locked. Ready in 4m 12s."
+
+
+def test_an_error_without_a_countdown_is_left_alone():
+    assert message_of(VaultError("Nope.")) == "Nope."
 
 
 def test_a_row_carries_the_absolute_unlock_date_as_well_as_the_countdown():
