@@ -220,6 +220,112 @@ def test_stdout_stays_parseable_when_piped_through_a_shell(env):
     assert isinstance(rows, list)
 
 
+# ── delete / renew / send / link-gmail over the wire ─────────────────────────
+def test_delete_without_yes_leaves_the_secret_alone(env, github):
+    added = _add(env)
+    proc = run(env, ["delete", "--id", added["id"]])
+
+    assert proc.returncode == 2
+    assert json.loads(proc.stderr)["code"] == "usage"
+    assert f"vault/secrets/{added['id']}.tle" in github.files
+
+
+def test_delete_with_yes_removes_every_file(env, github):
+    added = _add(env)
+    proc = run(env, ["delete", "--id", added["id"], "--yes", "--json"])
+
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(proc.stdout)["deleted"] is True
+    assert not [p for p in github.files if added["id"] in p]
+
+
+def test_renew_of_a_ready_secret_pushes_a_new_round(env, github):
+    added = _add(env)
+    _make_ready(github, added["id"])
+
+    proc = run(env, ["renew", "--id", added["id"], "--duration", "30d", "--json"])
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout)
+    assert payload["renewed"] is True
+    assert payload["round"] > 0
+    meta = json.loads(github.files[f"vault/secrets/{added['id']}.meta"].decode())
+    assert meta["drand_round"] == payload["round"]
+
+
+def test_renew_of_a_locked_secret_exits_three_and_writes_nothing(env, github):
+    added = _add(env)
+    before = dict(github.files)
+
+    proc = run(env, ["renew", "--id", added["id"], "--duration", "30d"])
+
+    assert proc.returncode == 3
+    assert proc.stdout == b""
+    assert json.loads(proc.stderr)["code"] == "not_ready"
+    assert github.files == before
+
+
+def test_renew_never_writes_the_plaintext_to_either_stream(env, github):
+    added = _add(env)
+    _make_ready(github, added["id"])
+
+    proc = run(env, ["renew", "--id", added["id"], "--duration", "30d", "--json"])
+
+    assert SECRET.encode() not in proc.stdout
+    assert SECRET.encode() not in proc.stderr
+
+
+def test_send_dispatches_the_workflow(env, github):
+    added = _add(env, name="mailed")
+    # `add --email` is the supported route; rewrite the meta so we do not depend on it here.
+    _set_delivery_email(github, added["id"], "a@b.co")
+
+    proc = run(env, ["send", "--id", added["id"], "--json"])
+
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(proc.stdout)["dispatched"] is True
+    assert github.dispatched == [(f"unlock-{added['id']}.yml", "main")]
+
+
+def test_send_without_a_delivery_address_exits_two(env):
+    added = _add(env)
+    proc = run(env, ["send", "--id", added["id"]])
+    assert proc.returncode == 2
+    assert json.loads(proc.stderr)["code"] == "usage"
+
+
+def test_link_gmail_seals_the_credentials_into_actions_secrets(env, github):
+    from tests.stub_github import unseal
+
+    proc = run(
+        {**env, "TIMESAFE_OAUTH_CLIENT_SECRET": "the-client-secret"},
+        ["link-gmail", "--gmail", "vault@gmail.com", "--client-id", "cid", "--token-stdin", "--json"],
+        b"1//the-refresh-token\n",
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(proc.stdout)["linked"] is True
+    assert unseal(github.actions_secrets["GMAIL_REFRESH_TOKEN"]) == "1//the-refresh-token"
+    assert unseal(github.actions_secrets["OAUTH_CLIENT_SECRET"]) == "the-client-secret"
+    # Sealed on the way out, and never echoed back on the way in.
+    assert b"1//the-refresh-token" not in proc.stdout
+    assert b"the-client-secret" not in proc.stdout
+
+
+def test_link_gmail_without_the_client_secret_in_the_environment_exits_two(env):
+    proc = run(env, ["link-gmail", "--gmail", "v@gmail.com", "--client-id", "cid", "--token-stdin"],
+               b"1//rt")
+    assert proc.returncode == 2
+    assert b"TIMESAFE_OAUTH_CLIENT_SECRET" in proc.stderr
+
+
+def _set_delivery_email(github, secret_id, email):
+    path = f"vault/secrets/{secret_id}.meta"
+    meta = json.loads(github.files[path].decode())
+    meta["delivery_email"] = email
+    github.files[path] = json.dumps(meta).encode()
+
+
 def _make_ready(github, secret_id):
     """Rewrite the stored metadata so the secret's unlock time is in the past."""
     path = f"vault/secrets/{secret_id}.meta"

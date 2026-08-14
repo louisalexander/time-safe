@@ -12,12 +12,28 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+from nacl.public import PrivateKey, SealedBox
+
 REPO = "owner/vault"
+_SECRETS_PREFIX = f"/repos/{REPO}/actions/secrets/"
+
+
+# A throwaway libsodium keypair, so `seal` runs for real against a key we can decrypt with.
+_SECRET_KEY = PrivateKey.generate()
+ACTIONS_PUBLIC_KEY = base64.b64encode(bytes(_SECRET_KEY.public_key)).decode()
+ACTIONS_KEY_ID = "stub-key-id"
+
+
+def unseal(sealed_b64: str) -> str:
+    """Recover an Actions secret the client sealed, so tests can assert on what was really stored."""
+    return SealedBox(_SECRET_KEY).decrypt(base64.b64decode(sealed_b64)).decode()
 
 
 class _State:
     def __init__(self) -> None:
         self.files: dict[str, bytes] = {}
+        self.actions_secrets: dict[str, str] = {}
+        self.dispatched: list[tuple[str, str]] = []
 
     def sha(self, path: str) -> str:
         return hashlib.sha1(path.encode()).hexdigest()
@@ -47,6 +63,8 @@ def _handler(state: _State):
                 return self._send(200, {"default_branch": "main", "full_name": REPO})
             if self.path == "/user":
                 return self._send(200, {"login": "owner"})
+            if self.path == _SECRETS_PREFIX + "public-key":
+                return self._send(200, {"key_id": ACTIONS_KEY_ID, "key": ACTIONS_PUBLIC_KEY})
             if "/git/blobs/" in self.path:
                 wanted = self.path.rsplit("/", 1)[1]
                 for path, content in state.files.items():
@@ -86,6 +104,10 @@ def _handler(state: _State):
         def do_PUT(self):  # noqa: N802
             length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(length) or b"{}")
+            if self.path.startswith(_SECRETS_PREFIX):
+                name = self.path[len(_SECRETS_PREFIX):]
+                state.actions_secrets[name] = body["encrypted_value"]
+                return self._send(204)
             path = self._path_after(f"/repos/{REPO}/contents/")
             state.files[path] = base64.b64decode(body["content"])
             return self._send(200, {"content": {"path": path}})
@@ -99,7 +121,11 @@ def _handler(state: _State):
 
         def do_POST(self):  # noqa: N802
             length = int(self.headers.get("Content-Length", 0))
-            self.rfile.read(length)
+            body = json.loads(self.rfile.read(length) or b"{}")
+            if "/actions/workflows/" in self.path:
+                workflow = self.path.split("/actions/workflows/", 1)[1].removesuffix("/dispatches")
+                state.dispatched.append((workflow, body.get("ref", "")))
+                return self._send(204)
             return self._send(201, {})
 
     return Handler
@@ -121,6 +147,14 @@ class StubGitHub:
     @property
     def files(self) -> dict[str, bytes]:
         return self.state.files
+
+    @property
+    def actions_secrets(self) -> dict[str, str]:
+        return self.state.actions_secrets
+
+    @property
+    def dispatched(self) -> list[tuple[str, str]]:
+        return self.state.dispatched
 
     def __enter__(self) -> "StubGitHub":
         self._thread.start()

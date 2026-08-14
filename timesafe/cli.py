@@ -23,6 +23,10 @@ Exit codes: 0 ok · 2 usage · 3 not-yet-unlockable · 4 vault/network · 5 not-
 
 PROG = "timesafe"
 
+# The OAuth client secret arrives out of band, like the GitHub PAT: stdin is already carrying the
+# refresh token, and neither may go in argv where `ps` would show it.
+GMAIL_CLIENT_SECRET_ENV = "TIMESAFE_OAUTH_CLIENT_SECRET"
+
 
 def _version() -> str:
     # Read from the package, not importlib.metadata: a frozen binary has no installed metadata, and
@@ -100,6 +104,43 @@ def build_parser(stdout: BinaryIO | None = None) -> _Parser:
     _add_selectors(p_reveal)
 
     subparsers.add_parser("list", parents=[common], help="full metadata for every secret")
+
+    p_delete = subparsers.add_parser(
+        "delete", parents=[common], help="irreversibly remove a secret from the vault"
+    )
+    _add_selectors(p_delete)
+    p_delete.add_argument(
+        "--yes",
+        action="store_true",
+        help="confirm the deletion; required, since there is no prompt to answer",
+    )
+
+    p_renew = subparsers.add_parser(
+        "renew", parents=[common], help="re-lock an already-unlocked secret for a new duration"
+    )
+    _add_selectors(p_renew)
+    p_renew.add_argument(
+        "--duration", required=True, metavar="<10d|2h|30m>", help="how long to re-lock for"
+    )
+
+    p_send = subparsers.add_parser(
+        "send", parents=[common], help="dispatch the workflow that emails a secret"
+    )
+    _add_selectors(p_send)
+
+    p_link = subparsers.add_parser(
+        "link-gmail", parents=[common], help="store an existing Gmail OAuth credential"
+    )
+    p_link.add_argument(
+        "--gmail", required=True, metavar="<addr>", help="the vault's sending address"
+    )
+    p_link.add_argument("--client-id", required=True, metavar="<id>", help="OAuth client id")
+    p_link.add_argument(
+        "--token-stdin",
+        action="store_true",
+        required=True,
+        help="read the OAuth refresh token from stdin (the only way to supply it)",
+    )
 
     p_init = subparsers.add_parser(
         "init", parents=[common], help="create and/or initialize a vault repo"
@@ -250,6 +291,71 @@ def _cmd_list(args, stdout: BinaryIO, vault: Vault | None) -> int:
     return 0
 
 
+def _cmd_delete(args, stdout: BinaryIO, vault: Vault | None) -> int:
+    # Checked before anything is resolved or fetched: the TUI has a confirmation dialog, this has
+    # only the flag, and a `delete` that ran anyway would be unrecoverable.
+    if not args.yes:
+        raise UsageError("Deleting a secret is irreversible. Re-run with --yes to confirm.")
+    result = api.delete(
+        secret_id=args.secret_id, name=args.name, vault=vault, selector=args.vault
+    )
+    if args.json:
+        _emit_json(stdout, result)
+    else:
+        _write(stdout, f"Deleted {result['name']} ({result['id']}).\n")
+    return 0
+
+
+def _cmd_renew(args, stdout: BinaryIO, vault: Vault | None) -> int:
+    result = api.renew(
+        secret_id=args.secret_id,
+        name=args.name,
+        duration=args.duration,
+        vault=vault,
+        selector=args.vault,
+    )
+    if args.json:
+        _emit_json(stdout, result)
+    else:
+        _write(
+            stdout,
+            f"Renewed {result['name']} ({result['id']}); unlocks {result['unlock_at']}.\n",
+        )
+    return 0
+
+
+def _cmd_send(args, stdout: BinaryIO, vault: Vault | None) -> int:
+    result = api.send(secret_id=args.secret_id, name=args.name, vault=vault, selector=args.vault)
+    if args.json:
+        _emit_json(stdout, result)
+    else:
+        _write(stdout, f"Dispatched delivery of {result['name']} to {result['delivery_email']}.\n")
+    return 0
+
+
+def _cmd_link_gmail(args, stdin: BinaryIO, stdout: BinaryIO, vault: Vault | None) -> int:
+    client_secret = (os.environ.get(GMAIL_CLIENT_SECRET_ENV) or "").strip()
+    if not client_secret:
+        raise UsageError(f"No OAuth client secret. Set {GMAIL_CLIENT_SECRET_ENV}.")
+    refresh_token = _read_stdin_text(stdin, "refresh token")
+    result = api.link_gmail(
+        gmail_address=args.gmail,
+        client_id=args.client_id,
+        client_secret=client_secret,
+        refresh_token=refresh_token,
+        vault=vault,
+        selector=args.vault,
+    )
+    if args.json:
+        _emit_json(stdout, result)
+    else:
+        _write(
+            stdout,
+            f"Linked {result['gmail_address']}; stored {len(result['secrets'])} Actions secrets.\n",
+        )
+    return 0
+
+
 def _cmd_init(args, stdin: BinaryIO, stdout: BinaryIO) -> int:
     if not args.vault:
         raise UsageError("init needs --vault owner/repo.")
@@ -311,6 +417,14 @@ def main(
             return _cmd_reveal(args, stdout, vault)
         if args.command == "list":
             return _cmd_list(args, stdout, vault)
+        if args.command == "delete":
+            return _cmd_delete(args, stdout, vault)
+        if args.command == "renew":
+            return _cmd_renew(args, stdout, vault)
+        if args.command == "send":
+            return _cmd_send(args, stdout, vault)
+        if args.command == "link-gmail":
+            return _cmd_link_gmail(args, stdin, stdout, vault)
         if args.command == "init":
             return _cmd_init(args, stdin, stdout)
         if args.command == "tui":

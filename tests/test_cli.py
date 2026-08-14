@@ -278,6 +278,192 @@ def test_list_of_an_empty_vault_is_an_empty_array(vault):
     assert json.loads(out) == []
 
 
+# ── delete ───────────────────────────────────────────────────────────────────
+def test_delete_needs_yes_and_changes_nothing_without_it(vault):
+    added = _add(vault)
+    code, out, err = run(["delete", "--id", added["id"]], vault=vault)
+
+    assert code == 2
+    assert out == b""
+    assert json.loads(err)["code"] == "usage"
+    assert [s.id for s in vault.list_secrets()] == [added["id"]]
+
+
+def test_delete_with_yes_removes_the_secret(vault):
+    added = _add(vault)
+    code, out, err = run(["delete", "--id", added["id"], "--yes", "--json"], vault=vault)
+
+    assert code == 0
+    assert err == b""
+    assert json.loads(out) == {"id": added["id"], "name": "n", "deleted": True}
+    assert vault.list_secrets() == []
+
+
+def test_delete_without_json_prints_a_human_line(vault):
+    added = _add(vault)
+    code, out, _ = run(["delete", "--id", added["id"], "--yes"], vault=vault)
+    assert code == 0
+    assert added["id"].encode() in out
+    assert not out.startswith(b"{")
+
+
+def test_delete_of_an_unknown_id_exits_five(vault):
+    code, _, err = run(["delete", "--id", "nope", "--yes"], vault=vault)
+    assert code == 5
+    assert json.loads(err)["code"] == "not_found"
+
+
+def test_delete_refuses_to_run_without_a_selector(vault):
+    # A bare `delete --yes` must never mean "everything".
+    _add(vault)
+    code, _, err = run(["delete", "--yes"], vault=vault)
+    assert code == 2
+    assert json.loads(err)["code"] == "usage"
+    assert len(vault.list_secrets()) == 1
+
+
+# ── renew ────────────────────────────────────────────────────────────────────
+def test_renew_re_locks_a_ready_secret(vault):
+    secret = _ready_secret(vault, plaintext="s3cr3t")
+    code, out, err = run(["renew", "--id", secret.id, "--duration", "2h", "--json"], vault=vault)
+
+    assert code == 0
+    assert err == b""
+    payload = json.loads(out)
+    assert payload["id"] == secret.id
+    assert payload["renewed"] is True
+    assert datetime.fromisoformat(payload["unlock_at"]) > datetime.now(timezone.utc)
+
+
+def test_renew_of_a_locked_secret_exits_three_like_reveal(vault):
+    added = _add(vault)
+    code, out, err = run(["renew", "--id", added["id"], "--duration", "2h"], vault=vault)
+
+    assert code == 3
+    assert out == b""
+    assert json.loads(err)["code"] == "not_ready"
+
+
+def test_renew_requires_a_duration(vault):
+    secret = _ready_secret(vault)
+    code, _, err = run(["renew", "--id", secret.id], vault=vault)
+    assert code == 2
+    assert json.loads(err)["code"] == "usage"
+
+
+def test_renew_rejects_a_bad_duration(vault):
+    secret = _ready_secret(vault)
+    code, _, err = run(["renew", "--id", secret.id, "--duration", "whenever"], vault=vault)
+    assert code == 2
+    assert json.loads(err)["code"] == "usage"
+
+
+def test_renew_never_prints_the_plaintext_it_had_to_decrypt(vault):
+    secret = _ready_secret(vault, plaintext=SECRET)
+    code, out, err = run(["renew", "--id", secret.id, "--duration", "1d", "--json"], vault=vault)
+    assert code == 0
+    assert SECRET.encode() not in out
+    assert SECRET.encode() not in err
+
+
+# ── send ─────────────────────────────────────────────────────────────────────
+def test_send_dispatches_the_delivery_workflow(vault):
+    secret = vault.put_secret("n", datetime.now(timezone.utc) + timedelta(days=1), SECRET, "a@b.co")
+    code, out, err = run(["send", "--id", secret.id, "--json"], vault=vault)
+
+    assert code == 0
+    assert err == b""
+    assert json.loads(out)["dispatched"] is True
+    assert vault.github.dispatched == [(f"unlock-{secret.id}.yml", "main")]
+
+
+def test_send_of_a_secret_with_no_email_is_a_usage_error(vault):
+    added = _add(vault)
+    code, _, err = run(["send", "--id", added["id"]], vault=vault)
+    assert code == 2
+    assert json.loads(err)["code"] == "usage"
+    assert vault.github.dispatched == []
+
+
+def test_send_of_an_unknown_id_exits_five(vault):
+    code, _, err = run(["send", "--id", "nope"], vault=vault)
+    assert code == 5
+    assert json.loads(err)["code"] == "not_found"
+
+
+# ── link-gmail ───────────────────────────────────────────────────────────────
+def _gmail_env(monkeypatch, secret="csec"):
+    monkeypatch.setenv(cli.GMAIL_CLIENT_SECRET_ENV, secret)
+
+
+def test_link_gmail_reads_the_refresh_token_from_stdin(vault, monkeypatch):
+    _gmail_env(monkeypatch)
+    code, out, err = run(
+        ["link-gmail", "--gmail", "v@gmail.com", "--client-id", "cid", "--token-stdin", "--json"],
+        stdin=b"1//refresh\n",
+        vault=vault,
+    )
+
+    assert code == 0
+    assert err == b""
+    assert json.loads(out)["linked"] is True
+    assert vault.github.secrets["GMAIL_REFRESH_TOKEN"] == ("sealed:1//refresh", "kid")
+
+
+def test_link_gmail_never_echoes_the_refresh_token(vault, monkeypatch):
+    _gmail_env(monkeypatch)
+    _, out, err = run(
+        ["link-gmail", "--gmail", "v@gmail.com", "--client-id", "cid", "--token-stdin", "--json"],
+        stdin=b"1//refresh",
+        vault=vault,
+    )
+    assert b"1//refresh" not in out
+    assert b"1//refresh" not in err
+    assert b"csec" not in out
+
+
+def test_link_gmail_without_a_client_secret_is_a_usage_error(vault, monkeypatch):
+    monkeypatch.delenv(cli.GMAIL_CLIENT_SECRET_ENV, raising=False)
+    code, _, err = run(
+        ["link-gmail", "--gmail", "v@gmail.com", "--client-id", "cid", "--token-stdin"],
+        stdin=b"1//refresh",
+        vault=vault,
+    )
+    assert code == 2
+    assert cli.GMAIL_CLIENT_SECRET_ENV.encode() in err
+
+
+def test_link_gmail_with_empty_stdin_is_a_usage_error(vault, monkeypatch):
+    _gmail_env(monkeypatch)
+    code, _, err = run(
+        ["link-gmail", "--gmail", "v@gmail.com", "--client-id", "cid", "--token-stdin"],
+        stdin=b"",
+        vault=vault,
+    )
+    assert code == 2
+    assert json.loads(err)["code"] == "empty_stdin"
+
+
+def test_link_gmail_takes_no_flag_that_could_carry_the_refresh_token(vault, monkeypatch):
+    _gmail_env(monkeypatch)
+    code, _, _ = run(
+        ["link-gmail", "--gmail", "v@gmail.com", "--client-id", "cid", "--refresh-token", "1//rt"],
+        vault=vault,
+    )
+    assert code == 2
+
+
+def test_link_gmail_rejects_a_malformed_address(vault, monkeypatch):
+    _gmail_env(monkeypatch)
+    code, _, err = run(
+        ["link-gmail", "--gmail", "nope", "--client-id", "cid", "--token-stdin"],
+        stdin=b"1//rt",
+        vault=vault,
+    )
+    assert code == 2
+    assert json.loads(err)["code"] == "usage"
+
+
 # ── framing ──────────────────────────────────────────────────────────────────
 def test_help_exits_zero(vault):
     code, out, _ = run(["--help"], vault=vault)
