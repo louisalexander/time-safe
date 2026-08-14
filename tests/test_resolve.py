@@ -115,3 +115,29 @@ def test_resolve_vault_builds_a_vault_for_the_chosen_repo_and_token(tmp_path):
     vault = resolve.resolve_vault(None, registry=reg, credentials=store, env={})
 
     assert vault.github.repo == "me/only"
+
+
+def test_resolve_vault_retries_idempotent_reads_by_default(tmp_path):
+    from timesafe.github import retry
+
+    vault = _resolved(tmp_path)
+    assert vault.github.retries == retry.ATTEMPTS
+    assert vault.github.get_file.__wrapped__  # the read is wrapped, the writes are not
+
+
+def test_resolve_vault_can_build_a_client_that_does_not_retry(tmp_path):
+    vault = _resolved(tmp_path, retries=1)
+    assert vault.github.retries == 1
+    assert not hasattr(vault.github.get_file, "__wrapped__")
+
+
+def _resolved(tmp_path, **kwargs):
+    store = InMemoryCredentialStore()
+    store.put("me/only", "tok")
+    return resolve.resolve_vault(
+        None,
+        registry=_registry(tmp_path, VaultRef("only", "me/only")),
+        credentials=store,
+        env={},
+        **kwargs,
+    )

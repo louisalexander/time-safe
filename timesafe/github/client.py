@@ -2,18 +2,40 @@ from __future__ import annotations
 
 import base64
 import os
+import time
+from collections.abc import Callable
+from typing import Any
 
 import httpx
 
+from timesafe.github import retry
+
 API = "https://api.github.com"
 API_ENV = "TIMESAFE_GITHUB_API"
+
+# Reads only. `put_file` and `delete_file` are absent on purpose: `add` is not idempotent, so a
+# retried write after an ambiguous failure risks a duplicate or a confusing partial state.
+#
+# Every read belongs here, including any added later. `get_text_file` is the one a cron `status --id`
+# actually uses — leaving it out would exempt the exact path the retry layer exists to protect while
+# still covering the rarely-hit ciphertext fetch.
+IDEMPOTENT_READS = ("get_file", "get_text_file", "list_dir", "repo_exists")
 
 
 class GitHubClient:
     """Thin httpx wrapper over the handful of GitHub REST endpoints time-safe needs."""
 
-    def __init__(self, repo: str, token: str, client: httpx.Client | None = None) -> None:
+    def __init__(
+        self,
+        repo: str,
+        token: str,
+        client: httpx.Client | None = None,
+        *,
+        retries: int = retry.ATTEMPTS,
+        sleep: Callable[[float], Any] = time.sleep,
+    ) -> None:
         self.repo = repo
+        self.retries = retries
         # $TIMESAFE_GITHUB_API points at a different API root — GitHub Enterprise, or the stub
         # server the end-to-end tests run a real subprocess against.
         self._client = client or httpx.Client(
@@ -25,6 +47,17 @@ class GitHubClient:
             },
             timeout=30,
         )
+
+        # Bound to the instance rather than declared on the methods, so a retry always wraps the
+        # whole logical read and never one request inside it — a read stays idempotent however many
+        # requests its implementation happens to need.
+        if retries > 1:
+            for name in IDEMPOTENT_READS:
+                setattr(
+                    self,
+                    name,
+                    retry.retrying(getattr(self, name), attempts=retries, sleep=sleep),
+                )
 
     # ── contents ──────────────────────────────────────────────────────────────
     def _contents(self, path: str) -> str:

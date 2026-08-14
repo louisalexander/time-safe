@@ -48,6 +48,7 @@ Everything comes from the environment, so nothing has to be typed.
 |---|---|
 | `TIMESAFE_VAULT` | which vault — `owner/repo`, or a name from your local vault list |
 | `TIMESAFE_GITHUB_TOKEN` | GitHub PAT — needs **`contents`** write, plus **`workflow`** for `--email` (see below) |
+| `TIMESAFE_OAUTH_CLIENT_SECRET` | Google OAuth client secret, read only by `link-gmail` |
 | `TIMESAFE_TLE` | path to a specific `tle` binary (overrides the bundled one) |
 | `TIMESAFE_GITHUB_API` | alternate API root, for GitHub Enterprise |
 | `TIMESAFE_DEBUG` | set to `1` to print an exception line on unexpected failures |
@@ -89,6 +90,30 @@ waiting for one.
 
     An environment variable is readable via `/proc/self/environ` by the same user. Under systemd,
     prefer `LoadCredential=`, or an `EnvironmentFile=` at mode `0600`.
+
+## Retries
+
+Reads are retried; writes are not.
+
+Every read — the metadata fetch, the ciphertext fetch, the directory listing, the repo probe — retries
+up to **3 attempts** on connection errors, `5xx`, `429`, and `403` carrying a `Retry-After`. That
+covers the single `.meta` read a `status --id` poll is made of, which is the case this exists for.
+Backoff is exponential and the total wait is capped at **10s**, because a cron job that hangs is a
+worse failure than one that exits `4` and tries again on the next tick. A `Retry-After` longer than
+that budget is not waited out at all.
+
+A plain `403` — the shape an unscoped token takes — is **not** retried, so a misconfigured token
+still fails immediately rather than costing every run the full budget.
+
+Writes are never retried. `add` is not idempotent, so a retried write after an ambiguous failure
+risks a duplicate or a confusing partial state; the [cleanup path](#add) already leaves the vault
+clean for you to retry deliberately.
+
+```bash
+timesafe status --json --no-retry     # fail on the first transient error
+```
+
+`--no-retry` is accepted by every command.
 
 ## Exit codes
 
@@ -150,7 +175,7 @@ Failure modes: empty stdin → `2`; stdin is a terminal → `2` immediately, rat
 that will never come; a failed write is cleaned up so no half-written secret is left behind.
 
 `--email` records a delivery address and writes the unlock workflow. It does not check that Gmail is
-linked — see [the limitation below](#what-the-cli-cannot-do).
+linked; [`link-gmail`](#link-gmail) is what does that, and [`send`](#send) is what triggers delivery.
 
 ### `status`
 
@@ -199,6 +224,105 @@ timesafe list [--json]
 
 Full metadata for every secret: `id`, `name`, `unlock_at`, `created_at`, `round`, `chain`,
 `delivery_email`, `ready`. `status` is the readiness view; `list` is the inventory view.
+
+### `delete`
+
+```bash
+timesafe delete --id <id> --yes [--json]
+```
+
+Removes the ciphertext, the metadata, and the unlock workflow if the secret has one. **Irreversible**
+— a timelocked secret has no backup anywhere, so a deleted one is gone.
+
+`--yes` is required. The TUI has a confirmation dialog; a pipe has nothing to answer one with, so the
+flag *is* the confirmation. Without it: exit `2`, and nothing is touched.
+
+```json
+{"id":"3f2a91c4-…","name":"break-glass","deleted":true}
+```
+
+A missing `--id`/`--name` is a usage error, never "all" — a typo must not be able to empty a vault.
+Works on a locked secret: deleting needs no plaintext.
+
+### `renew`
+
+```bash
+timesafe renew --id <id> --duration <10d|2h|30m> [--json]
+```
+
+Re-locks an **already-unlocked** secret for a fresh duration: decrypt now, re-encrypt to a later
+drand round, push.
+
+```json
+{"id":"3f2a91c4-…","name":"break-glass","unlock_at":"2026-08-27T12:00:00+00:00",
+ "round":19563210,"renewed":true}
+```
+
+!!! warning "Only unlocked secrets can be renewed"
+
+    Renewing means reading the plaintext, and a still-locked tlock ciphertext cannot be read. So a
+    locked secret fails exactly the way `reveal` does — exit **3**, `code: "not_ready"` — and nothing
+    is written. This is not a way to extend a lock; nothing can do that (see
+    [Security](security.md)).
+
+The delivery address survives a renew. The workflow embeds the unlock round, so a secret that has
+one gets it rewritten; a secret added without `--email` still has none and still gets none.
+
+### `send`
+
+```bash
+timesafe send --id <id> [--json]
+```
+
+Dispatches the secret's delivery workflow, which tlock-decrypts inside GitHub Actions and emails the
+plaintext to the recorded address.
+
+```json
+{"id":"3f2a91c4-…","name":"break-glass","delivery_email":"ops@example.com","dispatched":true}
+```
+
+Safe to call **before** the unlock time: the workflow's own `tle -d` is the server-side gate and
+exits without sending while the secret is still locked. Dispatching writes the workflow first, so
+this works even for a secret whose workflow file is missing.
+
+A secret added without `--email` has nowhere to be sent, and is refused with exit `2` rather than
+dispatched at nobody. Requires Gmail to be linked — see below.
+
+### `link-gmail`
+
+```bash
+export TIMESAFE_OAUTH_CLIENT_SECRET=GOCSPX-...
+printf '%s' "$REFRESH_TOKEN" | timesafe link-gmail \
+  --gmail vault@gmail.com --client-id 1234-abc.apps.googleusercontent.com --token-stdin
+```
+
+Seals an existing Gmail OAuth credential into the vault's Actions secrets — `GMAIL_ADDRESS`,
+`OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN` — which is what the delivery workflow
+reads. Needs `secrets: write` on the PAT.
+
+```json
+{"gmail_address":"vault@gmail.com","secrets":["GMAIL_ADDRESS","OAUTH_CLIENT_ID",
+ "OAUTH_CLIENT_SECRET","GMAIL_REFRESH_TOKEN"],"linked":true}
+```
+
+The two sensitive values arrive out of band, never in argv: the refresh token on **stdin**, the client
+secret in `$TIMESAFE_OAUTH_CLIENT_SECRET`. Neither is echoed back.
+
+!!! note "Minting the refresh token is still a browser flow"
+
+    Google refuses the `gmail.send` scope to the device authorization flow, so *something* has to
+    open a browser once. The TUI's `g` does it for you; otherwise use any standard OAuth loopback or
+    playground flow against **the same client id and secret** you pass here, with `access_type=offline`
+    and `prompt=consent` so a refresh token is actually issued.
+
+    The point of this command is that the browser step happens **once, anywhere** — and the result is
+    then transferable to any number of headless hosts.
+
+    If the Google Cloud project is still in **Testing** publishing status, its refresh tokens expire
+    after 7 days. Publish the app before relying on unattended delivery.
+
+Re-run it any time to rotate the credential; it overwrites all four secrets and refreshes the
+delivery script.
 
 ### `init`
 
@@ -304,18 +428,18 @@ except NotFoundError:
     print("gone")
 ```
 
-`api.add`, `api.status`, `api.reveal`, `api.list_secrets` and `api.init` return plain JSON-ready data
-and raise `timesafe.errors` exceptions, each carrying `.exit_code` and `.code`. Pass `vault=` to
-supply your own `Vault` and skip environment resolution.
+`api.add`, `api.status`, `api.reveal`, `api.list_secrets`, `api.delete`, `api.renew`, `api.send`,
+`api.link_gmail` and `api.init` return plain JSON-ready data and raise `timesafe.errors` exceptions,
+each carrying `.exit_code` and `.code`. Pass `vault=` to supply your own `Vault` and skip environment
+resolution; a vault built any other way retries reads on the same schedule as the CLI.
 
 ## What the CLI cannot do
 
-- **Link Gmail.** It's a browser OAuth flow, so it's inherently interactive. `add --email` records the
-  address and writes the workflow, but delivery fails at run time until someone presses `g` in the TUI
-  once for that vault.
-- **Delete or renew.** Not exposed; use the TUI.
-- **Extend a lock.** Nothing can — the unlock time is cryptographically bound. See
-  [Security](security.md).
+- **Mint a Gmail refresh token.** Google will not issue the `gmail.send` scope through the device
+  flow, so the consent step needs a browser. [`link-gmail`](#link-gmail) closes the gap: do it once,
+  anywhere, then seal the result into as many headless vaults as you like.
+- **Extend a lock.** Nothing can — the unlock time is cryptographically bound.
+  [`renew`](#renew) only works once a secret has already unlocked. See [Security](security.md).
 
 ## Secret handling
 

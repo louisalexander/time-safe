@@ -19,6 +19,7 @@ from timesafe.errors import (
     UsageError,
     VaultError,
 )
+from timesafe.github import retry
 from timesafe.github.client import GitHubClient
 from timesafe.resolve import resolve_vault
 from timesafe.timelock import tle
@@ -114,6 +115,26 @@ def _lookup(vault: Vault, secret_id: str | None, name: str | None) -> Secret:
 def _seconds_remaining(secret: Secret, now: datetime | None = None) -> int:
     delta = (secret.unlock_at - (now or _now())).total_seconds()
     return max(0, int(delta))
+
+
+def _ready_secret(
+    v: Vault, *, secret_id: str | None, name: str | None, now: datetime | None
+) -> Secret:
+    """Find a secret, refusing it if its unlock time has not passed.
+
+    Shared by reveal and renew: both need the plaintext, so both fail identically — one exit code,
+    one `code` string — when the ciphertext still cannot be read. Goes through `_lookup`, so
+    `renew --id` inherits the same constant-cost fetch `reveal --id` gets.
+    """
+    secret = _lookup(v, secret_id, name)
+
+    if not secret.is_ready(now):
+        raise NotReadyError(
+            f"{secret.name} unlocks at {secret.unlock_at.astimezone(timezone.utc).isoformat()}.",
+            id=secret.id,
+            seconds_remaining=_seconds_remaining(secret, now),
+        )
+    return secret
 
 
 # ── add ──────────────────────────────────────────────────────────────────────
@@ -286,15 +307,8 @@ def reveal(
     fetching the ciphertext at all, and tlock's own refusal, which catches clock skew.
     """
     v = _vault_for(vault, selector)
-    secret = _lookup(v, secret_id, name)
-
+    secret = _ready_secret(v, secret_id=secret_id, name=name, now=now)
     remaining = _seconds_remaining(secret, now)
-    if not secret.is_ready(now):
-        raise NotReadyError(
-            f"{secret.name} unlocks at {secret.unlock_at.astimezone(timezone.utc).isoformat()}.",
-            id=secret.id,
-            seconds_remaining=remaining,
-        )
 
     try:
         with _github_errors("could not read the ciphertext"):
@@ -311,6 +325,151 @@ def reveal(
         raise VaultError(f"Ciphertext missing for {secret.id}.") from exc
 
 
+# ── delete ───────────────────────────────────────────────────────────────────
+def delete(
+    *,
+    secret_id: str | None = None,
+    name: str | None = None,
+    vault: Vault | None = None,
+    selector: str | None = None,
+) -> dict[str, Any]:
+    """Remove a secret's ciphertext, metadata and workflow. Irreversible.
+
+    A selector is always required — the TUI deletes one row at a time, and there is deliberately no
+    way to spell "everything", so a missing `--id` can never empty a vault.
+    """
+    v = _vault_for(vault, selector)
+    secret = _lookup(v, secret_id, name)
+
+    with _github_errors("could not delete the secret"):
+        v.delete(secret)
+
+    return {"id": secret.id, "name": secret.name, "deleted": True}
+
+
+# ── renew ────────────────────────────────────────────────────────────────────
+def renew(
+    *,
+    duration: str | timedelta,
+    secret_id: str | None = None,
+    name: str | None = None,
+    vault: Vault | None = None,
+    selector: str | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Re-lock an already-unlocked secret for a fresh duration.
+
+    Only unlocked secrets can be renewed: renewing means decrypting and re-encrypting to a later
+    round, and a still-locked ciphertext cannot be read. That is `reveal`'s exit-3 condition
+    exactly, so it raises the same NotReadyError rather than inventing a second failure mode.
+    """
+    new_unlock_at = _now() + _as_duration(duration)
+    v = _vault_for(vault, selector)
+    secret = _ready_secret(v, secret_id=secret_id, name=name, now=now)
+
+    try:
+        with _github_errors("could not renew the secret"):
+            renewed = v.renew(secret, new_unlock_at)
+    except tle.NotYetUnlocked as exc:
+        raise NotReadyError(
+            "The drand round for this secret has not been published yet.",
+            id=secret.id,
+            seconds_remaining=_seconds_remaining(secret, now),
+        ) from exc
+    except tle.TleError as exc:
+        raise VaultError(f"Decryption failed: {exc}") from exc
+    except FileNotFoundError as exc:
+        raise VaultError(f"Ciphertext missing for {secret.id}.") from exc
+
+    return {
+        "id": renewed.id,
+        "name": renewed.name,
+        "unlock_at": renewed.unlock_at.astimezone(timezone.utc).isoformat(),
+        "round": renewed.drand_round,
+        "renewed": True,
+    }
+
+
+# ── send ─────────────────────────────────────────────────────────────────────
+def send(
+    *,
+    secret_id: str | None = None,
+    name: str | None = None,
+    vault: Vault | None = None,
+    selector: str | None = None,
+) -> dict[str, Any]:
+    """Dispatch the secret's delivery workflow, which emails the plaintext once its round lands.
+
+    Safe to call before the unlock time: the workflow's own tlock decrypt is the server-side gate,
+    and exits without sending while the secret is still locked.
+    """
+    v = _vault_for(vault, selector)
+    secret = _lookup(v, secret_id, name)
+
+    if not secret.delivery_email:
+        raise UsageError(
+            f"{secret.name} has no delivery address, so there is nothing to send it to. "
+            "Only a secret added with --email can be delivered."
+        )
+
+    # dispatch_email re-writes the workflow first, so this works even for a secret whose workflow
+    # was never written or was removed.
+    with _github_errors("could not dispatch the delivery workflow"):
+        v.dispatch_email(secret)
+
+    return {
+        "id": secret.id,
+        "name": secret.name,
+        "delivery_email": secret.delivery_email,
+        "dispatched": True,
+    }
+
+
+# ── gmail ────────────────────────────────────────────────────────────────────
+# Reported back so a provisioning script can confirm what landed. Kept in step with
+# Vault.relink_gmail by test_link_gmail_seals_the_four_actions_secrets, which compares the two.
+GMAIL_SECRET_NAMES = (
+    "GMAIL_ADDRESS",
+    "OAUTH_CLIENT_ID",
+    "OAUTH_CLIENT_SECRET",
+    "GMAIL_REFRESH_TOKEN",
+)
+
+
+def link_gmail(
+    *,
+    gmail_address: str,
+    client_id: str,
+    client_secret: str,
+    refresh_token: str,
+    vault: Vault | None = None,
+    selector: str | None = None,
+) -> dict[str, Any]:
+    """Seal an existing Gmail OAuth credential into the vault's Actions secrets.
+
+    The browser consent that mints the refresh token stays interactive — Google will not issue
+    `gmail.send` through the device flow — but it only has to happen once, on any machine. This is
+    how that result gets onto a host with no browser and no TUI.
+    """
+    if not is_valid_email(gmail_address):
+        raise UsageError(f"{gmail_address!r} is not a valid Gmail address.")
+    for label, value in (
+        ("client id", client_id),
+        ("client secret", client_secret),
+        ("refresh token", refresh_token),
+    ):
+        if not value or not value.strip():
+            raise UsageError(f"The OAuth {label} is empty.")
+
+    v = _vault_for(vault, selector)
+    with _github_errors("could not store the Gmail credentials"):
+        v.relink_gmail(gmail_address, client_id, client_secret, refresh_token)
+
+    # Names only — the values are write-only from here on, and echoing them would put a live
+    # refresh token in a provisioning log.
+    return {"gmail_address": gmail_address, "secrets": list(GMAIL_SECRET_NAMES), "linked": True}
+
+
 # ── init ─────────────────────────────────────────────────────────────────────
 def init(
     *,
@@ -318,6 +477,7 @@ def init(
     name: str,
     token: str,
     create: bool = False,
+    retries: int = retry.ATTEMPTS,
     github: Any = None,
     registry: VaultRegistry | None = None,
     credentials: CredentialStore | None = None,
@@ -333,7 +493,7 @@ def init(
     if not token:
         raise UsageError("No token supplied. Set TIMESAFE_GITHUB_TOKEN or pass --token-stdin.")
 
-    client = github if github is not None else GitHubClient(repo, token)
+    client = github if github is not None else GitHubClient(repo, token, retries=retries)
     registry = VaultRegistry.load() if registry is None else registry
     credentials = KeyringCredentialStore() if credentials is None else credentials
 
@@ -375,4 +535,14 @@ def init(
     }
 
 
-__all__ = ["add", "status", "list_secrets", "reveal", "init"]
+__all__ = [
+    "add",
+    "status",
+    "list_secrets",
+    "reveal",
+    "delete",
+    "renew",
+    "send",
+    "link_gmail",
+    "init",
+]

@@ -103,7 +103,14 @@ timesafe status --id "$ID" --json      # {"ready":false,"seconds_remaining":8639
 timesafe reveal --id "$ID"             # plaintext only, no trailing newline; exit 3 if not yet
 timesafe list --json
 timesafe init --vault me/new-vault --name seedbox --create   # idempotent; always private
+
+timesafe renew  --id "$ID" --duration 30d   # re-lock an already-unlocked secret
+timesafe send   --id "$ID"                  # dispatch the email delivery workflow
+timesafe delete --id "$ID" --yes            # irreversible, so --yes is the confirmation
 ```
+
+Reads retry transient GitHub failures (3 attempts, ≤10s total) so a blip doesn't fail an unattended
+break-glass check; `--no-retry` opts out. Writes are never retried — `add` isn't idempotent.
 
 | Exit | Meaning |
 |---|---|
@@ -114,7 +121,8 @@ timesafe init --vault me/new-vault --name seedbox --create   # idempotent; alway
 | `5` | no such secret |
 
 Errors are JSON on stderr with a stable `code` field. The same logic is importable — `timesafe.api.add
-/ status / reveal / list_secrets / init` — if you'd rather skip the subprocess.
+/ status / reveal / list_secrets / delete / renew / send / link_gmail / init` — if you'd rather skip
+the subprocess.
 
 > **Persist the `id` that `add` returns.** It's the vault's authoritative key. Secret **names are not
 > unique** and nothing enforces it, so never construct an id from a name; `--name` lookup exists as a
@@ -132,6 +140,15 @@ Email uses **your own** Google Cloud OAuth client:
 4. In time-safe press **`g`**, enter the Gmail address + client id/secret → **Link** → approve in the browser.
 
 The refresh token + client secret are stored **only** as GitHub Actions secrets in the vault repo — never locally.
+
+**Headless hosts:** step 4 needs a browser, but only once, and not necessarily on the target machine.
+Once you hold a refresh token, seal it into any vault without a TUI:
+
+```bash
+export TIMESAFE_OAUTH_CLIENT_SECRET=GOCSPX-...
+printf '%s' "$REFRESH_TOKEN" | timesafe link-gmail --gmail vault@gmail.com \
+  --client-id 1234-abc.apps.googleusercontent.com --token-stdin
+```
 
 ## 🛡️ Security model
 

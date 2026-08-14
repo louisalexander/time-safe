@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from timesafe.config.credentials import CredentialStore, KeyringCredentialStore
 from timesafe.config.registry import VaultRegistry
 from timesafe.errors import UsageError, VaultError
+from timesafe.github import retry
 from timesafe.github.client import GitHubClient
 from timesafe.validation import is_valid_repo
 from timesafe.vault.vault import Vault
@@ -88,12 +89,17 @@ def resolve_vault(
     registry: VaultRegistry | None = None,
     credentials: CredentialStore | None = None,
     env: Mapping[str, str] | None = None,
+    retries: int = retry.ATTEMPTS,
 ) -> Vault:
-    """Build a ready-to-use Vault from the ambient configuration."""
+    """Build a ready-to-use Vault from the ambient configuration.
+
+    `retries` bounds how hard idempotent reads try before giving up; 1 disables retrying entirely,
+    which is what `--no-retry` asks for.
+    """
     env = os.environ if env is None else env
     registry = VaultRegistry.load() if registry is None else registry
     credentials = KeyringCredentialStore() if credentials is None else credentials
 
     repo = resolve_repo(selector, registry, env)
     token = resolve_token(repo, credentials, env)
-    return Vault(GitHubClient(repo, token))
+    return Vault(GitHubClient(repo, token, retries=retries))

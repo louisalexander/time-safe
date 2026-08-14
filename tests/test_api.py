@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
+import respx
 
 from tests.fakes import FailingGitHub, FakeGitHub
 from timesafe import api
@@ -417,6 +418,369 @@ def test_list_returns_full_metadata(faked):
 
 def test_list_is_empty_for_a_fresh_vault(faked):
     assert api.list_secrets(vault=_vault()) == []
+
+
+# ── delete ───────────────────────────────────────────────────────────────────
+def test_delete_removes_every_file_the_secret_owns(faked):
+    gh = FakeGitHub()
+    vault = _vault(gh)
+    added = api.add(name="n", duration="1d", secret=SECRET, vault=vault)
+
+    result = api.delete(secret_id=added["id"], vault=vault)
+
+    assert result == {"id": added["id"], "name": "n", "deleted": True}
+    assert gh.files == {}
+
+
+def test_delete_by_name_when_unambiguous(faked):
+    vault = _vault()
+    api.add(name="unique", duration="1d", secret=SECRET, vault=vault)
+    assert api.delete(name="unique", vault=vault)["deleted"] is True
+    assert api.list_secrets(vault=vault) == []
+
+
+def test_delete_of_an_unknown_id_is_not_found(faked):
+    with pytest.raises(NotFoundError):
+        api.delete(secret_id="nope", vault=_vault())
+
+
+def test_delete_without_a_selector_is_a_usage_error(faked):
+    """No selector must never mean 'all' — that would empty a vault on a typo."""
+    with pytest.raises(UsageError):
+        api.delete(vault=_vault())
+
+
+def test_delete_works_on_a_still_locked_secret(faked):
+    """Unlike renew, delete needs no plaintext, so a locked secret is removable."""
+    vault = _vault()
+    added = api.add(name="n", duration="365d", secret=SECRET, vault=vault)
+    assert api.delete(secret_id=added["id"], vault=vault)["deleted"] is True
+
+
+# ── renew ────────────────────────────────────────────────────────────────────
+def test_renew_re_locks_a_ready_secret_for_a_new_duration(faked):
+    vault = _vault()
+    secret = vault.put_secret("ready", _past(), SECRET, None)
+
+    result = api.renew(secret_id=secret.id, duration="2h", vault=vault)
+
+    assert result["id"] == secret.id
+    assert result["renewed"] is True
+    unlock = datetime.fromisoformat(result["unlock_at"])
+    assert timedelta(hours=2) - (unlock - datetime.now(timezone.utc)) < timedelta(seconds=5)
+    # The plaintext survived the round trip.
+    reloaded = next(s for s in vault.list_secrets() if s.id == secret.id)
+    reloaded.unlock_at = _past()
+    assert vault.reveal(reloaded) == SECRET
+
+
+def test_renew_of_a_locked_secret_reuses_reveals_not_ready_path(faked):
+    """A locked tlock ciphertext cannot be re-timed because it cannot be read — exit 3, not a fault."""
+    vault = _vault()
+    added = api.add(name="n", duration="1d", secret=SECRET, vault=vault)
+
+    with pytest.raises(NotReadyError) as exc:
+        api.renew(secret_id=added["id"], duration="2h", vault=vault)
+
+    assert exc.value.exit_code == 3
+    assert exc.value.extra["seconds_remaining"] > 0
+
+
+def test_renew_does_not_touch_the_vault_when_the_secret_is_locked(faked):
+    vault = _vault()
+    added = api.add(name="n", duration="1d", secret=SECRET, vault=vault)
+    before = dict(vault.github.files)
+
+    with pytest.raises(NotReadyError):
+        api.renew(secret_id=added["id"], duration="2h", vault=vault)
+
+    assert vault.github.files == before
+
+
+def test_renew_rejects_a_bad_duration(faked):
+    vault = _vault()
+    secret = vault.put_secret("ready", _past(), SECRET, None)
+    with pytest.raises(UsageError):
+        api.renew(secret_id=secret.id, duration="whenever", vault=vault)
+
+
+def test_renew_of_an_unknown_id_is_not_found(faked):
+    with pytest.raises(NotFoundError):
+        api.renew(secret_id="nope", duration="1d", vault=_vault())
+
+
+def test_renew_maps_a_late_tlock_refusal_to_not_ready(faked, monkeypatch):
+    from timesafe.timelock import tle
+
+    vault = _vault()
+    secret = vault.put_secret("ready", _past(), SECRET, None)
+    monkeypatch.setattr(
+        tle, "decrypt", lambda ct, **k: (_ for _ in ()).throw(tle.NotYetUnlocked("too early"))
+    )
+
+    with pytest.raises(NotReadyError):
+        api.renew(secret_id=secret.id, duration="1d", vault=vault)
+
+
+def test_renew_keeps_the_delivery_email_and_rewrites_the_workflow(faked):
+    vault = _vault()
+    secret = vault.put_secret("ready", _past(), SECRET, "a@b.co")
+
+    api.renew(secret_id=secret.id, duration="1d", vault=vault)
+
+    (row,) = api.list_secrets(vault=vault)
+    assert row["delivery_email"] == "a@b.co"
+    assert _workflow_path(secret.id) in vault.github.files
+
+
+def test_renew_of_an_email_less_secret_still_writes_no_workflow(faked):
+    """`add` without --email writes no workflow so the token needs no `workflow` scope. Renewing
+    through the API must not quietly undo that and start demanding it."""
+    vault = _vault()
+    secret = vault.put_secret("ready", _past(), SECRET, None)
+
+    api.renew(secret_id=secret.id, duration="1d", vault=vault)
+
+    assert _workflow_path(secret.id) not in vault.github.files
+
+
+# ── send ─────────────────────────────────────────────────────────────────────
+def test_send_dispatches_the_delivery_workflow(faked):
+    vault = _vault()
+    secret = vault.put_secret("n", _past(), SECRET, "a@b.co")
+
+    result = api.send(secret_id=secret.id, vault=vault)
+
+    assert result == {
+        "id": secret.id,
+        "name": "n",
+        "delivery_email": "a@b.co",
+        "dispatched": True,
+    }
+    assert vault.github.dispatched == [(f"unlock-{secret.id}.yml", "main")]
+
+
+def test_send_writes_the_workflow_when_add_left_none_behind(faked):
+    """A secret added without an email has no workflow file; adding one later must still work."""
+    vault = _vault()
+    secret = vault.put_secret("n", _past(), SECRET, "a@b.co")
+    vault.github.delete_file(_workflow_path(secret.id), "simulate an add with no email")
+
+    api.send(secret_id=secret.id, vault=vault)
+
+    assert _workflow_path(secret.id) in vault.github.files
+    assert vault.github.dispatched
+
+
+def test_send_refuses_a_secret_with_no_delivery_address(faked):
+    """There is nowhere to send it, and dispatching would write a workflow that emails no one."""
+    vault = _vault()
+    secret = vault.put_secret("n", _past(), SECRET, None)
+
+    with pytest.raises(UsageError):
+        api.send(secret_id=secret.id, vault=vault)
+
+    assert vault.github.dispatched == []
+
+
+def test_send_works_before_the_unlock_time(faked):
+    """The workflow is the time gate — tlock refuses server-side until the round lands."""
+    vault = _vault()
+    added = api.add(name="n", duration="1d", secret=SECRET, email="a@b.co", vault=vault)
+    assert api.send(secret_id=added["id"], vault=vault)["dispatched"] is True
+
+
+def test_send_of_an_unknown_id_is_not_found(faked):
+    with pytest.raises(NotFoundError):
+        api.send(secret_id="nope", vault=_vault())
+
+
+# ── link-gmail ───────────────────────────────────────────────────────────────
+def test_link_gmail_seals_the_four_actions_secrets(faked):
+    gh = FakeGitHub()
+
+    result = api.link_gmail(
+        gmail_address="vault@gmail.com",
+        client_id="cid",
+        client_secret="csec",
+        refresh_token="1//rt",
+        vault=_vault(gh),
+    )
+
+    assert result["linked"] is True
+    assert result["gmail_address"] == "vault@gmail.com"
+    assert set(gh.secrets) == {
+        "GMAIL_ADDRESS",
+        "OAUTH_CLIENT_ID",
+        "OAUTH_CLIENT_SECRET",
+        "GMAIL_REFRESH_TOKEN",
+    }
+    # The reported names must be what was really written, not a list that can drift from it.
+    assert set(result["secrets"]) == set(gh.secrets)
+
+
+def test_link_gmail_reports_the_secret_names_but_never_their_values(faked):
+    gh = FakeGitHub()
+    result = api.link_gmail(
+        gmail_address="v@gmail.com", client_id="cid", client_secret="csec",
+        refresh_token="1//rt", vault=_vault(gh),
+    )
+    assert result["secrets"] == [
+        "GMAIL_ADDRESS", "OAUTH_CLIENT_ID", "OAUTH_CLIENT_SECRET", "GMAIL_REFRESH_TOKEN",
+    ]
+    assert "1//rt" not in json.dumps(result)
+    assert "csec" not in json.dumps(result)
+
+
+def test_link_gmail_rejects_a_malformed_address(faked):
+    with pytest.raises(UsageError):
+        api.link_gmail(
+            gmail_address="not-an-email", client_id="cid", client_secret="csec",
+            refresh_token="rt", vault=_vault(),
+        )
+
+
+@pytest.mark.parametrize("missing", ["client_id", "client_secret", "refresh_token"])
+def test_link_gmail_requires_every_credential(faked, missing):
+    kwargs = dict(
+        gmail_address="v@gmail.com", client_id="cid", client_secret="csec", refresh_token="rt"
+    )
+    kwargs[missing] = ""
+    with pytest.raises(UsageError):
+        api.link_gmail(vault=_vault(), **kwargs)
+
+
+def test_link_gmail_refreshes_the_delivery_script(faked):
+    from timesafe.vault.vault import SCRIPT_PATH
+
+    gh = FakeGitHub()
+    api.link_gmail(
+        gmail_address="v@gmail.com", client_id="cid", client_secret="csec",
+        refresh_token="rt", vault=_vault(gh),
+    )
+    assert SCRIPT_PATH in gh.files
+
+
+# ── retry, at the level a cron job feels it ──────────────────────────────────
+#
+# `status --id` is the per-minute poll the whole retry layer exists to protect. It reads exactly one
+# `.meta`, through get_text_file — so these drive the real GitHubClient rather than FakeGitHub,
+# which has no transport to fail.
+META_PATH = "vault/secrets/the-id.meta"
+META_JSON = json.dumps(
+    {
+        "id": "the-id",
+        "name": "break-glass",
+        "unlock_at": "2027-01-01T00:00:00+00:00",
+        "drand_round": 1,
+        "drand_chain": "chainhash",
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "delivery_email": None,
+    }
+).encode()
+
+
+def _meta_response(_request=None):
+    """One `.meta`, as the Contents API inlines it. Takes the request so respx can call it repeatedly."""
+    import base64
+
+    return httpx.Response(
+        200,
+        json={
+            "encoding": "base64",
+            "content": base64.b64encode(META_JSON).decode(),
+            "sha": "metasha",
+        },
+    )
+
+
+def _live_vault(slept, **kwargs):
+    from timesafe.github.client import API, GitHubClient
+
+    http = httpx.Client(base_url=API, headers={"Authorization": "Bearer t"})
+    return Vault(GitHubClient("owner/repo", "t", client=http, sleep=slept.append, **kwargs))
+
+
+@respx.mock
+def test_status_by_id_survives_a_transient_5xx_on_the_meta_read(faked):
+    from timesafe.github.client import API
+
+    slept = []
+    respx.get(f"{API}/repos/owner/repo/contents/{META_PATH}").mock(
+        side_effect=[httpx.Response(500), _meta_response()]
+    )
+
+    row = api.status(secret_id="the-id", vault=_live_vault(slept))
+
+    assert row["id"] == "the-id"
+    assert len(slept) == 1
+
+
+@respx.mock
+def test_no_retry_still_fails_the_meta_read_on_the_first_attempt(faked):
+    from timesafe.github.client import API
+
+    slept = []
+    route = respx.get(f"{API}/repos/owner/repo/contents/{META_PATH}").mock(
+        side_effect=[httpx.Response(500), _meta_response()]
+    )
+
+    with pytest.raises(VaultError):
+        api.status(secret_id="the-id", vault=_live_vault(slept, retries=1))
+
+    assert route.call_count == 1
+    assert slept == []
+
+
+@respx.mock
+def test_renew_by_id_reads_one_meta_and_retries_it(faked):
+    """renew --id must be constant-cost too, not a full scan behind a retried read."""
+    from timesafe.github.client import API
+
+    slept = []
+    meta = respx.get(f"{API}/repos/owner/repo/contents/{META_PATH}").mock(
+        side_effect=[httpx.Response(503), _meta_response()]
+    )
+    listing = respx.get(f"{API}/repos/owner/repo/contents/{SECRETS_DIR}").respond(json=[])
+
+    # Still locked, so it stops at the readiness gate — after the lookup, which is what we measure.
+    with pytest.raises(NotReadyError):
+        api.renew(secret_id="the-id", duration="1d", vault=_live_vault(slept))
+
+    assert meta.call_count == 2  # one failure, one retry
+    assert listing.call_count == 0  # never scanned the vault
+    assert len(slept) == 1
+
+
+@respx.mock
+def test_delete_by_id_never_scans_the_vault(faked):
+    from timesafe.github.client import API
+
+    slept = []
+    respx.get(f"{API}/repos/owner/repo/contents/{META_PATH}").mock(side_effect=_meta_response)
+    listing = respx.get(f"{API}/repos/owner/repo/contents/{SECRETS_DIR}").respond(json=[])
+    respx.get(f"{API}/repos/owner/repo/contents/vault/secrets/the-id.tle").respond(404)
+    respx.get(f"{API}/repos/owner/repo/contents/.github/workflows/unlock-the-id.yml").respond(404)
+    respx.delete(f"{API}/repos/owner/repo/contents/{META_PATH}").respond(200, json={})
+
+    assert api.delete(secret_id="the-id", vault=_live_vault(slept))["deleted"] is True
+    assert listing.call_count == 0
+
+
+@respx.mock
+def test_send_by_id_never_scans_the_vault(faked):
+    from timesafe.github.client import API
+
+    slept = []
+    respx.get(f"{API}/repos/owner/repo/contents/{META_PATH}").mock(side_effect=_meta_response)
+    listing = respx.get(f"{API}/repos/owner/repo/contents/{SECRETS_DIR}").respond(json=[])
+
+    # This fixture has no delivery address, so send stops right after the lookup — which is the
+    # part being measured.
+    with pytest.raises(UsageError):
+        api.send(secret_id="the-id", vault=_live_vault(slept))
+
+    assert listing.call_count == 0
 
 
 # ── init ─────────────────────────────────────────────────────────────────────

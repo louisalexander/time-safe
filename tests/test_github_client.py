@@ -1,6 +1,7 @@
 import base64
 
 import httpx
+import pytest
 import respx
 
 from timesafe.github.client import API, GitHubClient
@@ -158,6 +159,109 @@ def test_create_repo_offers_no_way_to_request_a_public_vault():
     import inspect
 
     assert "private" not in inspect.signature(GitHubClient.create_repo).parameters
+
+
+# ── retry on idempotent reads ────────────────────────────────────────────────
+def _retrying_client(slept):
+    http = httpx.Client(base_url=API, headers={"Authorization": "Bearer t"})
+    return GitHubClient(REPO, "t", client=http, sleep=slept.append)
+
+
+@respx.mock
+def test_a_read_survives_a_transient_5xx():
+    slept = []
+    respx.get(f"{API}/repos/{REPO}/contents/vault/secrets").mock(
+        side_effect=[
+            httpx.Response(503),
+            httpx.Response(200, json=[{"path": "vault/secrets/a.meta"}]),
+        ]
+    )
+    assert _retrying_client(slept).list_dir("vault/secrets") == ["vault/secrets/a.meta"]
+    assert len(slept) == 1
+
+
+@respx.mock
+def test_the_whole_read_is_retried_not_a_single_request():
+    """get_file may take more than one request; a retry re-runs the read, whatever it is made of."""
+    slept = []
+    sha = "sha1"
+    respx.get(f"{API}/repos/{REPO}/contents/vault/secrets/x.tle").mock(
+        side_effect=[httpx.Response(500), httpx.Response(200, json={"sha": sha, "content": "x"})]
+    )
+    respx.get(f"{API}/repos/{REPO}/git/blobs/{sha}").respond(
+        json={"content": base64.b64encode(b"cipher").decode()}
+    )
+    assert _retrying_client(slept).get_file("vault/secrets/x.tle") == b"cipher"
+
+
+@respx.mock
+def test_get_text_file_survives_a_transient_5xx():
+    """`.meta` reads go through get_text_file, so this is the path a cron poll actually takes."""
+    slept = []
+    respx.get(f"{API}/repos/{REPO}/contents/vault/secrets/x.meta").mock(
+        side_effect=[
+            httpx.Response(500),
+            httpx.Response(
+                200, json={"encoding": "base64", "content": base64.b64encode(b"{}").decode()}
+            ),
+        ]
+    )
+    assert _retrying_client(slept).get_text_file("vault/secrets/x.meta") == b"{}"
+    assert len(slept) == 1
+
+
+@respx.mock
+def test_every_read_the_polling_path_uses_is_wrapped():
+    """A read left out of IDEMPOTENT_READS is silently un-retried, which is the easy mistake."""
+    client = GitHubClient(REPO, "t", client=httpx.Client(base_url=API))
+    for name in ("get_file", "get_text_file", "list_dir", "repo_exists"):
+        assert hasattr(getattr(client, name), "__wrapped__"), f"{name} is not retried"
+
+
+@respx.mock
+def test_repo_exists_survives_a_transient_5xx():
+    slept = []
+    respx.get(f"{API}/repos/{REPO}").mock(
+        side_effect=[httpx.Response(502), httpx.Response(200, json={"default_branch": "main"})]
+    )
+    assert _retrying_client(slept).repo_exists() is True
+
+
+@respx.mock
+def test_a_404_is_answered_immediately_rather_than_retried():
+    slept = []
+    route = respx.get(f"{API}/repos/{REPO}/contents/vault/secrets/x.tle").respond(404)
+    assert _retrying_client(slept).get_file("vault/secrets/x.tle") is None
+    assert route.call_count == 1
+    assert slept == []
+
+
+@respx.mock
+def test_a_write_is_never_retried():
+    """`add` is not idempotent: a retried write after an ambiguous failure risks a duplicate."""
+    slept = []
+    path = "vault/secrets/x.meta"
+    respx.get(f"{API}/repos/{REPO}/contents/{path}").respond(404)
+    put = respx.put(f"{API}/repos/{REPO}/contents/{path}").respond(500)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        _retrying_client(slept).put_file(path, b"hello", "msg")
+
+    assert put.call_count == 1
+    assert slept == []
+
+
+@respx.mock
+def test_retries_can_be_turned_off():
+    slept = []
+    http = httpx.Client(base_url=API, headers={"Authorization": "Bearer t"})
+    route = respx.get(f"{API}/repos/{REPO}/contents/vault/secrets").respond(503)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        GitHubClient(REPO, "t", client=http, retries=1, sleep=slept.append).list_dir("vault/secrets")
+
+    assert route.call_count == 1
+    assert slept == []
 
 
 @respx.mock
