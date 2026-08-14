@@ -909,6 +909,15 @@ def test_secrets_types_a_transport_failure(faked):
         api.secrets(vault=Vault(Offline()))
 
 
+def test_secrets_types_a_malformed_meta_rather_than_raising_through_the_ui(faked):
+    vault = _vault()
+    vault.put_secret("n", _past(), SECRET, None)
+    vault.github.files[f"{SECRETS_DIR}/broken.meta"] = b"not json"
+
+    with pytest.raises(VaultError):
+        api.secrets(vault=vault)
+
+
 def test_reveal_secret_returns_the_plaintext_once_unlocked(faked):
     vault = _vault()
     secret = vault.put_secret("ready", _past(), SECRET, None)

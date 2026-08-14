@@ -552,8 +552,13 @@ def secrets(*, vault: Vault | None = None, selector: str | None = None) -> list[
     on whichever secret the user chose.
     """
     v = _vault_for(vault, selector)
-    with _github_errors("could not list the vault"):
-        return v.list_secrets()
+    try:
+        with _github_errors("could not list the vault"):
+            return v.list_secrets()
+    except TimesafeError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — one malformed .meta must not take the whole UI down
+        raise VaultError(f"Could not list the vault. ({type(exc).__name__})") from exc
 
 
 def reveal_secret(*, vault: Vault, secret: Secret, now: datetime | None = None) -> str:
