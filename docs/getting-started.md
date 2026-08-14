@@ -9,7 +9,7 @@
   curl -sL https://github.com/drand/tlock/releases/download/v1.2.0/tlock_1.2.0_darwin_arm64.tar.gz | tar -xz -C .tools tle
   ```
   (Pick the asset for your OS/arch.)
-- A **private** GitHub repo to use as a vault, plus a token with `contents` + `secrets` + `workflows` write access (a fine-grained PAT scoped to just that repo is ideal).
+- A **private** GitHub repo to use as a vault, plus a token with `contents` write access — add `secrets` + `workflows` if you want email delivery (a fine-grained PAT scoped to just that repo is ideal).
 
 ## Install & run
 

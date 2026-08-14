@@ -162,13 +162,14 @@ def _describe_write_failure(exc: BaseException) -> str:
     path = exc.request.url.path.split("/contents/", 1)[-1]
     detail = f"GitHub returned {status} writing {path}."
 
-    # Every add writes a per-secret workflow, so a token with only `contents` write fails here and
-    # nowhere else — an easy scope to miss, and the failure gives no hint on its own.
+    # An add with --email writes a per-secret delivery workflow, so a token with only `contents`
+    # write fails here and nowhere else — an easy scope to miss, and the failure gives no hint on
+    # its own.
     if status == 403 and path.startswith(".github/workflows/"):
         detail += (
             " Writing under .github/workflows/ needs the `workflow` scope on the token "
-            "(fine-grained: Workflows → Read and write). time-safe writes one workflow per secret, "
-            "so this is required for every add, not just for email delivery."
+            "(fine-grained: Workflows → Read and write). Only --email needs it; adds without a "
+            "delivery address write no workflow and work on a contents-only token."
         )
     return detail
 

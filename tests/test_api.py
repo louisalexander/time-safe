@@ -109,7 +109,7 @@ def test_a_failed_write_reports_the_status_code_and_path(faked):
     """'(HTTPStatusError)' tells an operator nothing. The status and path cost no secrecy."""
     gh = _http_failing(403, ".github/workflows/unlock-x.yml")
     with pytest.raises(VaultError) as exc:
-        api.add(name="n", duration="1d", secret=SECRET, vault=Vault(gh))
+        api.add(name="n", duration="1d", secret=SECRET, email="a@b.co", vault=Vault(gh))
 
     message = str(exc.value)
     assert "403" in message
@@ -117,12 +117,32 @@ def test_a_failed_write_reports_the_status_code_and_path(faked):
 
 
 def test_a_403_on_the_workflow_path_names_the_missing_scope(faked):
-    # Every add writes a per-secret workflow, so a contents-only token fails here and nowhere else.
+    # Only an add with --email writes a workflow, so a contents-only token fails here and nowhere
+    # else — and only for that add.
     gh = _http_failing(403, ".github/workflows/unlock-x.yml")
     with pytest.raises(VaultError) as exc:
-        api.add(name="n", duration="1d", secret=SECRET, vault=Vault(gh))
+        api.add(name="n", duration="1d", secret=SECRET, email="a@b.co", vault=Vault(gh))
     assert "workflow" in str(exc.value).lower()
     assert "scope" in str(exc.value).lower()
+
+
+def test_a_403_on_the_workflow_path_says_the_scope_is_only_needed_for_email(faked):
+    """The old message told operators the scope was mandatory for every add. It no longer is, and
+    an error that sends someone to widen a token needlessly is worse than none."""
+    gh = _http_failing(403, ".github/workflows/unlock-x.yml")
+    with pytest.raises(VaultError) as exc:
+        api.add(name="n", duration="1d", secret=SECRET, email="a@b.co", vault=Vault(gh))
+    message = str(exc.value).lower()
+    assert "--email" in message
+    assert "every add" not in message
+
+
+def test_add_without_an_email_succeeds_on_a_token_that_cannot_write_workflows(faked):
+    """The motivating bug: local-reveal-only automation had to hand over the `workflow` scope."""
+    gh = _http_failing(403, ".github/workflows/unlock-x.yml")
+    result = api.add(name="n", duration="1d", secret=SECRET, vault=Vault(gh))
+    assert result["pushed"] is True
+    assert not [p for p in gh.files if p.startswith(".github/workflows/")]
 
 
 def test_a_403_elsewhere_does_not_blame_the_workflow_scope(faked):
@@ -135,7 +155,7 @@ def test_a_403_elsewhere_does_not_blame_the_workflow_scope(faked):
 def test_the_http_failure_message_still_never_contains_the_plaintext(faked):
     gh = _http_failing(403, ".github/workflows/unlock-x.yml")
     with pytest.raises(VaultError) as exc:
-        api.add(name="n", duration="1d", secret=SECRET, vault=Vault(gh))
+        api.add(name="n", duration="1d", secret=SECRET, email="a@b.co", vault=Vault(gh))
     assert SECRET not in str(exc.value)
     assert SECRET not in json.dumps(exc.value.to_json())
 
@@ -158,9 +178,11 @@ def _http_failing(status: int, path_suffix: str):
 
 
 def test_cleanup_removes_the_workflow_too(faked):
+    # The workflow is written last and only for a delivery address, so this is the add that can
+    # strand one.
     gh = FailingGitHub(fail_on_path_suffix=".yml")
     with pytest.raises(VaultError):
-        api.add(name="n", duration="1d", secret=SECRET, vault=Vault(gh))
+        api.add(name="n", duration="1d", secret=SECRET, email="a@b.co", vault=Vault(gh))
     assert gh.files == {}
 
 

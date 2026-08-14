@@ -54,11 +54,16 @@ class Vault:
         self.github.put_file(
             f"{SECRETS_DIR}/{secret.id}.meta", secret.to_meta_json().encode(), f"lock: meta {name}"
         )
-        self.github.put_file(
-            _workflow_path(secret.id),
-            build_unlock_workflow_yaml(secret).encode(),
-            f"lock: workflow {name}",
-        )
+        # Only a secret with somewhere to deliver needs a workflow. Writing one regardless would
+        # demand the `workflow` token scope for a file whose DELIVERY_EMAIL is empty and which
+        # could therefore never usefully run. `dispatch_email` writes it on demand, so nothing
+        # downstream depends on it existing here.
+        if delivery_email:
+            self.github.put_file(
+                _workflow_path(secret.id),
+                build_unlock_workflow_yaml(secret).encode(),
+                f"lock: workflow {name}",
+            )
         return secret
 
     def list_secrets(self) -> list[Secret]:
@@ -97,11 +102,14 @@ class Vault:
             secret.to_meta_json().encode(),
             f"renew: meta {secret.name}",
         )
-        self.github.put_file(
-            _workflow_path(secret.id),
-            build_unlock_workflow_yaml(secret).encode(),
-            f"renew: workflow {secret.name}",
-        )
+        # The workflow embeds the unlock round, so a renewed secret that has one needs it rewritten
+        # — but a secret with no delivery address still gets none, as in put_secret.
+        if secret.delivery_email:
+            self.github.put_file(
+                _workflow_path(secret.id),
+                build_unlock_workflow_yaml(secret).encode(),
+                f"renew: workflow {secret.name}",
+            )
         return secret
 
     def delete(self, secret: Secret) -> None:

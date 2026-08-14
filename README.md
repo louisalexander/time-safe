@@ -49,7 +49,7 @@ A keyboard-driven terminal app built with [Textual](https://textual.textualize.i
 
 ## 🚀 Quick start
 
-**Requirements:** Python 3.12+ and [uv](https://docs.astral.sh/uv/); the drand **`tle`** binary; a **private** GitHub repo + a token with `contents` + `secrets` + `workflows` write access.
+**Requirements:** Python 3.12+ and [uv](https://docs.astral.sh/uv/); the drand **`tle`** binary; a **private** GitHub repo + a token with `contents` write access (add `secrets` + `workflows` for email delivery).
 
 ```bash
 # get the tlock CLI (pick your OS/arch from the releases page)
@@ -87,9 +87,9 @@ curl -sL https://github.com/louisalexander/time-safe/releases/latest/download/ti
 
 Point it at a vault with two environment variables, then:
 
-> **Token scopes:** `contents` **and** `workflow` write are both required — time-safe writes a
-> per-secret workflow file on *every* `add`, not just when using email delivery. A `contents`-only
-> token fails with a 403 on `.github/workflows/…`.
+> **Token scopes:** `contents` write is enough to add and reveal secrets. Email delivery needs
+> `workflow` write as well (time-safe writes a per-secret workflow only for `--email`), and
+> `secrets` write to store the Gmail credentials.
 
 ```bash
 export TIMESAFE_VAULT=me/my-vault TIMESAFE_GITHUB_TOKEN=ghp_...
