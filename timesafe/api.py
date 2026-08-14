@@ -535,6 +535,123 @@ def init(
     }
 
 
+# ── operations on an already-resolved secret ─────────────────────────────────
+"""These take a `Secret` rather than a selector because the caller is already holding the one the
+user picked — the TUI lists a vault once and then acts on a row. Re-resolving would cost another
+listing per keystroke. Selector-taking wrappers belong on top of these if the CLI ever grows
+`delete` and `renew`.
+"""
+
+
+def secrets(*, vault: Vault | None = None, selector: str | None = None) -> list[Secret]:
+    """Every `Secret` in the vault, with transport failures typed.
+
+    `list_secrets` is the JSON view, for programs; this is the object view, for a UI that has to act
+    on whichever secret the user chose.
+    """
+    v = _vault_for(vault, selector)
+    with _github_errors("could not list the vault"):
+        return v.list_secrets()
+
+
+def reveal_secret(*, vault: Vault, secret: Secret, now: datetime | None = None) -> str:
+    """Decrypt an already-resolved secret, with the same two not-ready gates as `reveal`.
+
+    `reveal` above repeats these checks after resolving a selector; it is left untouched here
+    because it is being changed in parallel, and should delegate to this once that lands.
+    """
+    remaining = _seconds_remaining(secret, now)
+    if not secret.is_ready(now):
+        raise NotReadyError(
+            f"{secret.name} unlocks at {secret.unlock_at.astimezone(timezone.utc).isoformat()}.",
+            id=secret.id,
+            seconds_remaining=remaining,
+        )
+
+    try:
+        with _github_errors("could not read the ciphertext"):
+            return vault.reveal(secret)
+    except tle.NotYetUnlocked as exc:
+        raise NotReadyError(
+            "The drand round for this secret has not been published yet.",
+            id=secret.id,
+            seconds_remaining=remaining,
+        ) from exc
+    except tle.TleError as exc:
+        raise VaultError(f"Decryption failed: {exc}") from exc
+    except FileNotFoundError as exc:
+        raise VaultError(f"Ciphertext missing for {secret.id}.") from exc
+
+
+def renew_secret(*, vault: Vault, secret: Secret, duration: str | timedelta) -> dict[str, Any]:
+    """Re-lock a ready secret for a new duration: decrypt now, re-encrypt to a later round.
+
+    Only possible once a secret is unlocked — a still-locked ciphertext cannot be re-timed, because
+    it cannot be read. Gated twice like `reveal`: the metadata pre-check, which avoids fetching the
+    ciphertext at all, and tlock's own refusal, which catches clock skew.
+    """
+    new_unlock_at = _now() + _as_duration(duration)
+    still_locked = NotReadyError(
+        f"{secret.name} is still locked, so it cannot be re-locked yet.",
+        id=secret.id,
+        seconds_remaining=_seconds_remaining(secret),
+    )
+    if not secret.is_ready():
+        raise still_locked
+
+    try:
+        renewed = vault.renew(secret, new_unlock_at)
+    except tle.NotYetUnlocked as exc:
+        raise still_locked from exc
+    except tle.TleError as exc:
+        raise VaultError(f"Decryption failed: {exc}") from exc
+    except TimesafeError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — typed and explained below, never re-raised raw
+        raise _write_error(f"Failed to re-lock {secret.name}.", exc) from exc
+
+    return {
+        "id": renewed.id,
+        "name": renewed.name,
+        "unlock_at": renewed.unlock_at.astimezone(timezone.utc).isoformat(),
+        "round": renewed.drand_round,
+    }
+
+
+def delete_secret(*, vault: Vault, secret: Secret) -> None:
+    """Remove a secret's ciphertext, metadata and unlock workflow. There is no undo."""
+    try:
+        vault.delete(secret)
+    except TimesafeError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise _write_error(f"Failed to delete {secret.name}.", exc) from exc
+
+
+def send_email(*, vault: Vault, secret: Secret) -> None:
+    """Trigger the workflow that decrypts at T and emails the plaintext to the secret's address."""
+    if not secret.delivery_email:
+        raise UsageError(f"{secret.name} has no delivery address.")
+    try:
+        vault.dispatch_email(secret)
+    except TimesafeError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise _write_error(f"Could not trigger delivery for {secret.name}.", exc) from exc
+
+
+def _write_error(prefix: str, exc: BaseException) -> TimesafeError:
+    """Type and explain a failed vault write, reusing `add`'s wording so the scope hint appears once.
+
+    A transport failure stays a `NetworkError` so a caller can offer a retry; a status code does not,
+    because retrying a 403 will not help.
+    """
+    detail = f"{prefix} {_describe_write_failure(exc)}"
+    if isinstance(exc, httpx.HTTPError) and not isinstance(exc, httpx.HTTPStatusError):
+        return NetworkError(detail)
+    return VaultError(detail)
+
+
 __all__ = [
     "add",
     "status",
@@ -545,4 +662,9 @@ __all__ = [
     "send",
     "link_gmail",
     "init",
+    "secrets",
+    "reveal_secret",
+    "renew_secret",
+    "delete_secret",
+    "send_email",
 ]

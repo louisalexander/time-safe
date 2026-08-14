@@ -11,6 +11,7 @@ from timesafe.config.credentials import InMemoryCredentialStore
 from timesafe.config.registry import VaultRegistry
 from timesafe.errors import (
     AmbiguousNameError,
+    NetworkError,
     NotFoundError,
     NotReadyError,
     UsageError,
@@ -888,3 +889,157 @@ def test_init_writes_the_delivery_script_and_sentinel(faked, tmp_path):
 def test_workflow_path_helper_is_still_what_cleanup_targets(faked):
     # Guards the cleanup path against a rename of the workflow naming scheme.
     assert _workflow_path("abc") == ".github/workflows/unlock-abc.yml"
+
+
+# ── operations on an already-resolved secret ─────────────────────────────────
+def test_secrets_returns_the_objects_not_json(faked):
+    vault = _vault()
+    added = api.add(name="n", duration="1d", secret=SECRET, vault=vault)
+    (only,) = api.secrets(vault=vault)
+    assert only.id == added["id"]
+    assert only.name == "n"
+
+
+def test_secrets_types_a_transport_failure(faked):
+    class Offline(FakeGitHub):
+        def list_dir(self, path):
+            raise httpx.ConnectError("no route to host")
+
+    with pytest.raises(NetworkError):
+        api.secrets(vault=Vault(Offline()))
+
+
+def test_reveal_secret_returns_the_plaintext_once_unlocked(faked):
+    vault = _vault()
+    secret = vault.put_secret("ready", _past(), SECRET, None)
+    assert api.reveal_secret(vault=vault, secret=secret) == SECRET
+
+
+def test_reveal_secret_before_the_unlock_time_is_not_ready_with_a_countdown(faked):
+    vault = _vault()
+    api.add(name="n", duration="1d", secret=SECRET, vault=vault)
+    (secret,) = api.secrets(vault=vault)
+
+    with pytest.raises(NotReadyError) as exc:
+        api.reveal_secret(vault=vault, secret=secret)
+
+    assert exc.value.extra["seconds_remaining"] > 0
+    assert exc.value.extra["id"] == secret.id
+
+
+def test_reveal_secret_maps_a_late_tlock_refusal_to_not_ready(faked, monkeypatch):
+    from timesafe.timelock import tle
+
+    vault = _vault()
+    secret = vault.put_secret("ready", _past(), SECRET, None)
+    monkeypatch.setattr(
+        tle, "decrypt", lambda ct, **k: (_ for _ in ()).throw(tle.NotYetUnlocked("too early"))
+    )
+
+    with pytest.raises(NotReadyError):
+        api.reveal_secret(vault=vault, secret=secret)
+
+
+# ── renew ────────────────────────────────────────────────────────────────────
+def test_renew_relocks_a_ready_secret_to_a_later_round(faked):
+    vault = _vault()
+    secret = vault.put_secret("ready", _past(), SECRET, None)
+
+    result = api.renew(vault=vault, secret=secret, duration="7d")
+
+    assert result["id"] == secret.id
+    assert datetime.fromisoformat(result["unlock_at"]) > datetime.now(timezone.utc)
+    assert vault.list_secrets()[0].is_ready() is False
+
+
+def test_renew_of_a_still_locked_secret_is_not_ready(faked):
+    vault = _vault()
+    api.add(name="n", duration="1d", secret=SECRET, vault=vault)
+    (secret,) = api.secrets(vault=vault)
+
+    with pytest.raises(NotReadyError):
+        api.renew(vault=vault, secret=secret, duration="7d")
+
+
+def test_renew_rejects_a_bad_duration(faked):
+    vault = _vault()
+    secret = vault.put_secret("ready", _past(), SECRET, None)
+    with pytest.raises(UsageError):
+        api.renew(vault=vault, secret=secret, duration="tomorrow")
+
+
+def test_renew_explains_a_403_on_the_workflow_path(faked):
+    """The same non-obvious scope failure add explains — renew writes the workflow too."""
+    vault = _vault()
+    secret = vault.put_secret("ready", _past(), SECRET, None)
+    vault.github = _relay_then_403(vault.github, ".yml")
+
+    with pytest.raises(VaultError) as exc:
+        api.renew(vault=vault, secret=secret, duration="7d")
+    assert "workflow" in str(exc.value).lower()
+    assert "scope" in str(exc.value).lower()
+
+
+def test_renew_never_echoes_the_plaintext_on_failure(faked):
+    vault = _vault()
+    secret = vault.put_secret("ready", _past(), SECRET, None)
+    vault.github = _relay_then_403(vault.github, ".yml")
+
+    with pytest.raises(VaultError) as exc:
+        api.renew(vault=vault, secret=secret, duration="7d")
+    assert SECRET not in json.dumps(exc.value.to_json())
+
+
+def _relay_then_403(inner, suffix: str):
+    """Wrap a FakeGitHub so writes to `suffix` raise a real 403, and everything else passes through."""
+
+    class Relay:
+        def __getattr__(self, name):
+            return getattr(inner, name)
+
+        def put_file(self, path, content, message):
+            if path.endswith(suffix):
+                request = httpx.Request("PUT", f"https://api.github.com/repos/o/r/contents/{path}")
+                raise httpx.HTTPStatusError(
+                    "boom", request=request, response=httpx.Response(403, request=request)
+                )
+            inner.put_file(path, content, message)
+
+    return Relay()
+
+
+# ── delete / send_email ──────────────────────────────────────────────────────
+def test_delete_removes_ciphertext_metadata_and_workflow(faked):
+    vault = _vault()
+    secret = vault.put_secret("n", _past(), SECRET, None)
+
+    api.delete(vault=vault, secret=secret)
+
+    assert vault.github.files == {}
+
+
+def test_delete_types_a_failure_instead_of_leaking_the_exception(faked):
+    class Stubborn(FakeGitHub):
+        def delete_file(self, path, message):
+            raise RuntimeError("boom")
+
+    vault = Vault(Stubborn())
+    secret = vault.put_secret("n", _past(), SECRET, None)
+    with pytest.raises(VaultError):
+        api.delete(vault=vault, secret=secret)
+
+
+def test_send_email_dispatches_the_unlock_workflow(faked):
+    vault = _vault()
+    secret = vault.put_secret("n", _past(), SECRET, "a@b.co")
+
+    api.send_email(vault=vault, secret=secret)
+
+    assert vault.github.dispatched == [(f"unlock-{secret.id}.yml", "main")]
+
+
+def test_send_email_without_a_delivery_address_is_a_usage_error(faked):
+    vault = _vault()
+    secret = vault.put_secret("n", _past(), SECRET, None)
+    with pytest.raises(UsageError):
+        api.send_email(vault=vault, secret=secret)
