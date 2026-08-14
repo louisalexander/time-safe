@@ -137,7 +137,7 @@ class SecretDetailScreen(Screen):
     @work
     async def _do_delete(self) -> None:
         try:
-            await asyncio.to_thread(api.delete, vault=self.vault, secret=self.secret)
+            await asyncio.to_thread(api.delete_secret, vault=self.vault, secret=self.secret)
         except TimesafeError as exc:
             self._report(exc)
             return

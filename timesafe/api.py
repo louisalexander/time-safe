@@ -117,23 +117,30 @@ def _seconds_remaining(secret: Secret, now: datetime | None = None) -> int:
     return max(0, int(delta))
 
 
-def _ready_secret(
-    v: Vault, *, secret_id: str | None, name: str | None, now: datetime | None
-) -> Secret:
-    """Find a secret, refusing it if its unlock time has not passed.
+def _refuse_if_locked(secret: Secret, now: datetime | None = None) -> None:
+    """The metadata gate: a ciphertext whose round has not landed cannot be read, so refuse early.
 
-    Shared by reveal and renew: both need the plaintext, so both fail identically — one exit code,
-    one `code` string — when the ciphertext still cannot be read. Goes through `_lookup`, so
-    `renew --id` inherits the same constant-cost fetch `reveal --id` gets.
+    One raise, so reveal and renew fail identically — one exit code, one `code` string, one message
+    — whether they were reached through a selector or handed a `Secret` the caller already had.
     """
-    secret = _lookup(v, secret_id, name)
-
     if not secret.is_ready(now):
         raise NotReadyError(
             f"{secret.name} unlocks at {secret.unlock_at.astimezone(timezone.utc).isoformat()}.",
             id=secret.id,
             seconds_remaining=_seconds_remaining(secret, now),
         )
+
+
+def _ready_secret(
+    v: Vault, *, secret_id: str | None, name: str | None, now: datetime | None
+) -> Secret:
+    """Find a secret by selector, refusing it if its unlock time has not passed.
+
+    Shared by reveal and renew: both need the plaintext. Goes through `_lookup`, so `renew --id`
+    inherits the same constant-cost fetch `reveal --id` gets.
+    """
+    secret = _lookup(v, secret_id, name)
+    _refuse_if_locked(secret, now)
     return secret
 
 
@@ -308,21 +315,7 @@ def reveal(
     """
     v = _vault_for(vault, selector)
     secret = _ready_secret(v, secret_id=secret_id, name=name, now=now)
-    remaining = _seconds_remaining(secret, now)
-
-    try:
-        with _github_errors("could not read the ciphertext"):
-            return v.reveal(secret)
-    except tle.NotYetUnlocked as exc:
-        raise NotReadyError(
-            "The drand round for this secret has not been published yet.",
-            id=secret.id,
-            seconds_remaining=remaining,
-        ) from exc
-    except tle.TleError as exc:
-        raise VaultError(f"Decryption failed: {exc}") from exc
-    except FileNotFoundError as exc:
-        raise VaultError(f"Ciphertext missing for {secret.id}.") from exc
+    return reveal_secret(vault=v, secret=secret, now=now)
 
 
 # ── delete ───────────────────────────────────────────────────────────────────
@@ -339,12 +332,7 @@ def delete(
     way to spell "everything", so a missing `--id` can never empty a vault.
     """
     v = _vault_for(vault, selector)
-    secret = _lookup(v, secret_id, name)
-
-    with _github_errors("could not delete the secret"):
-        v.delete(secret)
-
-    return {"id": secret.id, "name": secret.name, "deleted": True}
+    return delete_secret(vault=v, secret=_lookup(v, secret_id, name))
 
 
 # ── renew ────────────────────────────────────────────────────────────────────
@@ -363,31 +351,12 @@ def renew(
     round, and a still-locked ciphertext cannot be read. That is `reveal`'s exit-3 condition
     exactly, so it raises the same NotReadyError rather than inventing a second failure mode.
     """
-    new_unlock_at = _now() + _as_duration(duration)
+    # Validated before the lookup, so a malformed duration costs no requests and stays a usage
+    # error even for a secret that would also have failed the readiness gate.
+    span = _as_duration(duration)
     v = _vault_for(vault, selector)
     secret = _ready_secret(v, secret_id=secret_id, name=name, now=now)
-
-    try:
-        with _github_errors("could not renew the secret"):
-            renewed = v.renew(secret, new_unlock_at)
-    except tle.NotYetUnlocked as exc:
-        raise NotReadyError(
-            "The drand round for this secret has not been published yet.",
-            id=secret.id,
-            seconds_remaining=_seconds_remaining(secret, now),
-        ) from exc
-    except tle.TleError as exc:
-        raise VaultError(f"Decryption failed: {exc}") from exc
-    except FileNotFoundError as exc:
-        raise VaultError(f"Ciphertext missing for {secret.id}.") from exc
-
-    return {
-        "id": renewed.id,
-        "name": renewed.name,
-        "unlock_at": renewed.unlock_at.astimezone(timezone.utc).isoformat(),
-        "round": renewed.drand_round,
-        "renewed": True,
-    }
+    return renew_secret(vault=v, secret=secret, duration=span, now=now)
 
 
 # ── send ─────────────────────────────────────────────────────────────────────
@@ -404,25 +373,7 @@ def send(
     and exits without sending while the secret is still locked.
     """
     v = _vault_for(vault, selector)
-    secret = _lookup(v, secret_id, name)
-
-    if not secret.delivery_email:
-        raise UsageError(
-            f"{secret.name} has no delivery address, so there is nothing to send it to. "
-            "Only a secret added with --email can be delivered."
-        )
-
-    # dispatch_email re-writes the workflow first, so this works even for a secret whose workflow
-    # was never written or was removed.
-    with _github_errors("could not dispatch the delivery workflow"):
-        v.dispatch_email(secret)
-
-    return {
-        "id": secret.id,
-        "name": secret.name,
-        "delivery_email": secret.delivery_email,
-        "dispatched": True,
-    }
+    return send_email(vault=v, secret=_lookup(v, secret_id, name))
 
 
 # ── gmail ────────────────────────────────────────────────────────────────────
@@ -539,9 +490,12 @@ def init(
 
 # ── operations on an already-resolved secret ─────────────────────────────────
 """These take a `Secret` rather than a selector because the caller is already holding the one the
-user picked — the TUI lists a vault once and then acts on a row. Re-resolving would cost another
-listing per keystroke. Selector-taking wrappers belong on top of these if the CLI ever grows
-`delete` and `renew`.
+user picked — the TUI lists a vault once and then acts on a row, so there is nothing left to
+resolve. (`_lookup` makes an id cheap, so this is not about saving requests; it is about not
+re-deriving something the caller already has.)
+
+They are the implementations: the selector-taking entry points above resolve, then delegate here,
+so a behaviour lives in one place regardless of which surface reached it.
 """
 
 
@@ -562,18 +516,13 @@ def secrets(*, vault: Vault | None = None, selector: str | None = None) -> list[
 
 
 def reveal_secret(*, vault: Vault, secret: Secret, now: datetime | None = None) -> str:
-    """Decrypt an already-resolved secret, with the same two not-ready gates as `reveal`.
+    """Decrypt an already-resolved secret. The implementation behind `reveal`.
 
-    `reveal` above repeats these checks after resolving a selector; it is left untouched here
-    because it is being changed in parallel, and should delegate to this once that lands.
+    Two independent not-ready gates: the metadata pre-check, which avoids fetching the ciphertext at
+    all, and tlock's own refusal, which catches clock skew.
     """
+    _refuse_if_locked(secret, now)
     remaining = _seconds_remaining(secret, now)
-    if not secret.is_ready(now):
-        raise NotReadyError(
-            f"{secret.name} unlocks at {secret.unlock_at.astimezone(timezone.utc).isoformat()}.",
-            id=secret.id,
-            seconds_remaining=remaining,
-        )
 
     try:
         with _github_errors("could not read the ciphertext"):
@@ -590,31 +539,34 @@ def reveal_secret(*, vault: Vault, secret: Secret, now: datetime | None = None) 
         raise VaultError(f"Ciphertext missing for {secret.id}.") from exc
 
 
-def renew_secret(*, vault: Vault, secret: Secret, duration: str | timedelta) -> dict[str, Any]:
-    """Re-lock a ready secret for a new duration: decrypt now, re-encrypt to a later round.
+def renew_secret(
+    *, vault: Vault, secret: Secret, duration: str | timedelta, now: datetime | None = None
+) -> dict[str, Any]:
+    """Re-lock an already-unlocked secret for a fresh duration. The implementation behind `renew`.
 
-    Only possible once a secret is unlocked — a still-locked ciphertext cannot be re-timed, because
-    it cannot be read. Gated twice like `reveal`: the metadata pre-check, which avoids fetching the
-    ciphertext at all, and tlock's own refusal, which catches clock skew.
+    Renewing means decrypting and re-encrypting to a later round, so a still-locked ciphertext
+    cannot be re-timed — that is `reveal`'s exit-3 condition exactly, and it raises the same
+    NotReadyError rather than inventing a second failure mode. Both gates run before any write, so a
+    refused renew leaves the vault untouched.
     """
     new_unlock_at = _now() + _as_duration(duration)
-    still_locked = NotReadyError(
-        f"{secret.name} is still locked, so it cannot be re-locked yet.",
-        id=secret.id,
-        seconds_remaining=_seconds_remaining(secret),
-    )
-    if not secret.is_ready():
-        raise still_locked
+    _refuse_if_locked(secret, now)
 
     try:
         renewed = vault.renew(secret, new_unlock_at)
     except tle.NotYetUnlocked as exc:
-        raise still_locked from exc
+        raise NotReadyError(
+            "The drand round for this secret has not been published yet.",
+            id=secret.id,
+            seconds_remaining=_seconds_remaining(secret, now),
+        ) from exc
     except tle.TleError as exc:
         raise VaultError(f"Decryption failed: {exc}") from exc
+    except FileNotFoundError as exc:
+        raise VaultError(f"Ciphertext missing for {secret.id}.") from exc
     except TimesafeError:
         raise
-    except Exception as exc:  # noqa: BLE001 — typed and explained below, never re-raised raw
+    except Exception as exc:  # noqa: BLE001 — typed and explained, never re-raised raw
         raise _write_error(f"Failed to re-lock {secret.name}.", exc) from exc
 
     return {
@@ -622,11 +574,15 @@ def renew_secret(*, vault: Vault, secret: Secret, duration: str | timedelta) -> 
         "name": renewed.name,
         "unlock_at": renewed.unlock_at.astimezone(timezone.utc).isoformat(),
         "round": renewed.drand_round,
+        "renewed": True,
     }
 
 
-def delete_secret(*, vault: Vault, secret: Secret) -> None:
-    """Remove a secret's ciphertext, metadata and unlock workflow. There is no undo."""
+def delete_secret(*, vault: Vault, secret: Secret) -> dict[str, Any]:
+    """Remove a secret's ciphertext, metadata and workflow. The implementation behind `delete`.
+
+    Irreversible, and it needs no plaintext — so unlike renew, a still-locked secret is removable.
+    """
     try:
         vault.delete(secret)
     except TimesafeError:
@@ -634,17 +590,36 @@ def delete_secret(*, vault: Vault, secret: Secret) -> None:
     except Exception as exc:  # noqa: BLE001
         raise _write_error(f"Failed to delete {secret.name}.", exc) from exc
 
+    return {"id": secret.id, "name": secret.name, "deleted": True}
 
-def send_email(*, vault: Vault, secret: Secret) -> None:
-    """Trigger the workflow that decrypts at T and emails the plaintext to the secret's address."""
+
+def send_email(*, vault: Vault, secret: Secret) -> dict[str, Any]:
+    """Dispatch the secret's delivery workflow. The implementation behind `send`.
+
+    Safe to call before the unlock time: the workflow's own tlock decrypt is the server-side gate,
+    and exits without sending while the secret is still locked.
+    """
     if not secret.delivery_email:
-        raise UsageError(f"{secret.name} has no delivery address.")
+        raise UsageError(
+            f"{secret.name} has no delivery address, so there is nothing to send it to. "
+            "Only a secret added with --email can be delivered."
+        )
+
+    # dispatch_email re-writes the workflow first, so this works even for a secret whose workflow
+    # was never written or was removed.
     try:
         vault.dispatch_email(secret)
     except TimesafeError:
         raise
     except Exception as exc:  # noqa: BLE001
         raise _write_error(f"Could not trigger delivery for {secret.name}.", exc) from exc
+
+    return {
+        "id": secret.id,
+        "name": secret.name,
+        "delivery_email": secret.delivery_email,
+        "dispatched": True,
+    }
 
 
 def _write_error(prefix: str, exc: BaseException) -> TimesafeError:

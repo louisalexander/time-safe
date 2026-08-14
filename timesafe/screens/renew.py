@@ -66,7 +66,7 @@ class RenewScreen(Screen):
         error = self.query_one("#error", Label)
         try:
             await asyncio.to_thread(
-                api.renew, vault=self.vault, secret=self.secret, duration=duration
+                api.renew_secret, vault=self.vault, secret=self.secret, duration=duration
             )
         except TimesafeError as exc:
             error.update(message_of(exc))

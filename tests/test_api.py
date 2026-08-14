@@ -954,7 +954,7 @@ def test_renew_relocks_a_ready_secret_to_a_later_round(faked):
     vault = _vault()
     secret = vault.put_secret("ready", _past(), SECRET, None)
 
-    result = api.renew(vault=vault, secret=secret, duration="7d")
+    result = api.renew_secret(vault=vault, secret=secret, duration="7d")
 
     assert result["id"] == secret.id
     assert datetime.fromisoformat(result["unlock_at"]) > datetime.now(timezone.utc)
@@ -967,35 +967,60 @@ def test_renew_of_a_still_locked_secret_is_not_ready(faked):
     (secret,) = api.secrets(vault=vault)
 
     with pytest.raises(NotReadyError):
-        api.renew(vault=vault, secret=secret, duration="7d")
+        api.renew_secret(vault=vault, secret=secret, duration="7d")
 
 
-def test_renew_rejects_a_bad_duration(faked):
+def test_renew_secret_rejects_a_bad_duration(faked):
     vault = _vault()
     secret = vault.put_secret("ready", _past(), SECRET, None)
     with pytest.raises(UsageError):
-        api.renew(vault=vault, secret=secret, duration="tomorrow")
+        api.renew_secret(vault=vault, secret=secret, duration="tomorrow")
+
+
+def test_renew_rejects_a_bad_duration_before_spending_any_requests(faked):
+    """A malformed duration is a usage error even when the secret would also fail the ready gate."""
+    vault = _vault()
+    added = api.add(name="n", duration="365d", secret=SECRET, vault=vault)
+    reads: list[str] = []
+    vault.github.get_text_file = lambda p: reads.append(p)  # type: ignore[assignment]
+
+    with pytest.raises(UsageError):
+        api.renew(secret_id=added["id"], duration="whenever", vault=vault)
+
+    assert reads == []
 
 
 def test_renew_explains_a_403_on_the_workflow_path(faked):
-    """The same non-obvious scope failure add explains — renew writes the workflow too."""
+    """The same non-obvious scope failure add explains — renew rewrites the workflow too.
+
+    Only for a secret with a delivery address: that is the only kind that has a workflow at all.
+    """
     vault = _vault()
-    secret = vault.put_secret("ready", _past(), SECRET, None)
+    secret = vault.put_secret("ready", _past(), SECRET, "a@b.co")
     vault.github = _relay_then_403(vault.github, ".yml")
 
     with pytest.raises(VaultError) as exc:
-        api.renew(vault=vault, secret=secret, duration="7d")
+        api.renew_secret(vault=vault, secret=secret, duration="7d")
     assert "workflow" in str(exc.value).lower()
     assert "scope" in str(exc.value).lower()
 
 
-def test_renew_never_echoes_the_plaintext_on_failure(faked):
+def test_renewing_a_secret_with_no_delivery_address_needs_no_workflow_scope(faked):
+    """It writes no workflow, so a contents-only token renews it fine."""
     vault = _vault()
     secret = vault.put_secret("ready", _past(), SECRET, None)
     vault.github = _relay_then_403(vault.github, ".yml")
 
+    assert api.renew_secret(vault=vault, secret=secret, duration="7d")["id"] == secret.id
+
+
+def test_renew_never_echoes_the_plaintext_on_failure(faked):
+    vault = _vault()
+    secret = vault.put_secret("ready", _past(), SECRET, "a@b.co")
+    vault.github = _relay_then_403(vault.github, ".yml")
+
     with pytest.raises(VaultError) as exc:
-        api.renew(vault=vault, secret=secret, duration="7d")
+        api.renew_secret(vault=vault, secret=secret, duration="7d")
     assert SECRET not in json.dumps(exc.value.to_json())
 
 
@@ -1022,7 +1047,7 @@ def test_delete_removes_ciphertext_metadata_and_workflow(faked):
     vault = _vault()
     secret = vault.put_secret("n", _past(), SECRET, None)
 
-    api.delete(vault=vault, secret=secret)
+    api.delete_secret(vault=vault, secret=secret)
 
     assert vault.github.files == {}
 
@@ -1035,7 +1060,7 @@ def test_delete_types_a_failure_instead_of_leaking_the_exception(faked):
     vault = Vault(Stubborn())
     secret = vault.put_secret("n", _past(), SECRET, None)
     with pytest.raises(VaultError):
-        api.delete(vault=vault, secret=secret)
+        api.delete_secret(vault=vault, secret=secret)
 
 
 def test_send_email_dispatches_the_unlock_workflow(faked):

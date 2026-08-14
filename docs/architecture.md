@@ -62,7 +62,8 @@ A **ready** secret can be re-locked: the app decrypts it (possible now), encrypt
 | `github/client.py` | thin httpx GitHub REST client |
 | `github/secrets_api.py` | PyNaCl sealed-box for writing Actions secrets |
 | `oauth/loopback_flow.py` | Gmail OAuth (loopback/installed-app, PKCE) |
-| `api.py` | the UI-free surface both the CLI and the TUI call: add, status, list, reveal, init, renew, delete, deliver |
+| `api.py` | the UI-free surface both the CLI and the TUI call: add, status, list, reveal, delete, renew, send, link-gmail, init. Selector-taking entry points resolve, then delegate to the `_secret` implementations the TUI calls directly |
+| `github/retry.py` | bounded backoff for idempotent reads only — writes never retry |
 | `errors.py` | typed errors, each binding a stable `code` to an exit code |
 | `resolve.py` | headless vault + token resolution (env first, then keychain) |
 | `validation.py` · `format.py` | duration/email/repo validation and countdown rendering, shared by both surfaces |
