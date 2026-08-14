@@ -76,7 +76,7 @@ def retrying(
     attempts: int = ATTEMPTS,
     sleep: Callable[[float], Any] = time.sleep,
 ) -> Callable[..., T]:
-    """Wrap `fn` so transient failures are retried. `attempts=1` returns it unwrapped behaviour.
+    """Wrap `fn` so transient failures are retried. `attempts=1` makes the wrapper a pass-through.
 
     Wraps the whole call, not any one HTTP request: a read is idempotent however many requests it
     happens to be made of, so this stays correct if the underlying implementation changes.
