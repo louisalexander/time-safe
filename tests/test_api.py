@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
+import respx
 
 from tests.fakes import FailingGitHub, FakeGitHub
 from timesafe import api
@@ -647,6 +648,128 @@ def test_link_gmail_refreshes_the_delivery_script(faked):
         refresh_token="rt", vault=_vault(gh),
     )
     assert SCRIPT_PATH in gh.files
+
+
+# ── retry, at the level a cron job feels it ──────────────────────────────────
+#
+# `status --id` is the per-minute poll the whole retry layer exists to protect. It reads exactly one
+# `.meta`, through get_text_file — so these drive the real GitHubClient rather than FakeGitHub,
+# which has no transport to fail.
+META_PATH = "vault/secrets/the-id.meta"
+META_JSON = json.dumps(
+    {
+        "id": "the-id",
+        "name": "break-glass",
+        "unlock_at": "2027-01-01T00:00:00+00:00",
+        "drand_round": 1,
+        "drand_chain": "chainhash",
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "delivery_email": None,
+    }
+).encode()
+
+
+def _meta_response(_request=None):
+    """One `.meta`, as the Contents API inlines it. Takes the request so respx can call it repeatedly."""
+    import base64
+
+    return httpx.Response(
+        200,
+        json={
+            "encoding": "base64",
+            "content": base64.b64encode(META_JSON).decode(),
+            "sha": "metasha",
+        },
+    )
+
+
+def _live_vault(slept, **kwargs):
+    from timesafe.github.client import API, GitHubClient
+
+    http = httpx.Client(base_url=API, headers={"Authorization": "Bearer t"})
+    return Vault(GitHubClient("owner/repo", "t", client=http, sleep=slept.append, **kwargs))
+
+
+@respx.mock
+def test_status_by_id_survives_a_transient_5xx_on_the_meta_read(faked):
+    from timesafe.github.client import API
+
+    slept = []
+    respx.get(f"{API}/repos/owner/repo/contents/{META_PATH}").mock(
+        side_effect=[httpx.Response(500), _meta_response()]
+    )
+
+    row = api.status(secret_id="the-id", vault=_live_vault(slept))
+
+    assert row["id"] == "the-id"
+    assert len(slept) == 1
+
+
+@respx.mock
+def test_no_retry_still_fails_the_meta_read_on_the_first_attempt(faked):
+    from timesafe.github.client import API
+
+    slept = []
+    route = respx.get(f"{API}/repos/owner/repo/contents/{META_PATH}").mock(
+        side_effect=[httpx.Response(500), _meta_response()]
+    )
+
+    with pytest.raises(VaultError):
+        api.status(secret_id="the-id", vault=_live_vault(slept, retries=1))
+
+    assert route.call_count == 1
+    assert slept == []
+
+
+@respx.mock
+def test_renew_by_id_reads_one_meta_and_retries_it(faked):
+    """renew --id must be constant-cost too, not a full scan behind a retried read."""
+    from timesafe.github.client import API
+
+    slept = []
+    meta = respx.get(f"{API}/repos/owner/repo/contents/{META_PATH}").mock(
+        side_effect=[httpx.Response(503), _meta_response()]
+    )
+    listing = respx.get(f"{API}/repos/owner/repo/contents/{SECRETS_DIR}").respond(json=[])
+
+    # Still locked, so it stops at the readiness gate — after the lookup, which is what we measure.
+    with pytest.raises(NotReadyError):
+        api.renew(secret_id="the-id", duration="1d", vault=_live_vault(slept))
+
+    assert meta.call_count == 2  # one failure, one retry
+    assert listing.call_count == 0  # never scanned the vault
+    assert len(slept) == 1
+
+
+@respx.mock
+def test_delete_by_id_never_scans_the_vault(faked):
+    from timesafe.github.client import API
+
+    slept = []
+    respx.get(f"{API}/repos/owner/repo/contents/{META_PATH}").mock(side_effect=_meta_response)
+    listing = respx.get(f"{API}/repos/owner/repo/contents/{SECRETS_DIR}").respond(json=[])
+    respx.get(f"{API}/repos/owner/repo/contents/vault/secrets/the-id.tle").respond(404)
+    respx.get(f"{API}/repos/owner/repo/contents/.github/workflows/unlock-the-id.yml").respond(404)
+    respx.delete(f"{API}/repos/owner/repo/contents/{META_PATH}").respond(200, json={})
+
+    assert api.delete(secret_id="the-id", vault=_live_vault(slept))["deleted"] is True
+    assert listing.call_count == 0
+
+
+@respx.mock
+def test_send_by_id_never_scans_the_vault(faked):
+    from timesafe.github.client import API
+
+    slept = []
+    respx.get(f"{API}/repos/owner/repo/contents/{META_PATH}").mock(side_effect=_meta_response)
+    listing = respx.get(f"{API}/repos/owner/repo/contents/{SECRETS_DIR}").respond(json=[])
+
+    # This fixture has no delivery address, so send stops right after the lookup — which is the
+    # part being measured.
+    with pytest.raises(UsageError):
+        api.send(secret_id="the-id", vault=_live_vault(slept))
+
+    assert listing.call_count == 0
 
 
 # ── init ─────────────────────────────────────────────────────────────────────

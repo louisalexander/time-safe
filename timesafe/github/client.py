@@ -15,7 +15,11 @@ API_ENV = "TIMESAFE_GITHUB_API"
 
 # Reads only. `put_file` and `delete_file` are absent on purpose: `add` is not idempotent, so a
 # retried write after an ambiguous failure risks a duplicate or a confusing partial state.
-IDEMPOTENT_READS = ("get_file", "list_dir", "repo_exists")
+#
+# Every read belongs here, including any added later. `get_text_file` is the one a cron `status --id`
+# actually uses — leaving it out would exempt the exact path the retry layer exists to protect while
+# still covering the rarely-hit ciphertext fetch.
+IDEMPOTENT_READS = ("get_file", "get_text_file", "list_dir", "repo_exists")
 
 
 class GitHubClient:

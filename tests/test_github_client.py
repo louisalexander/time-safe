@@ -195,6 +195,30 @@ def test_the_whole_read_is_retried_not_a_single_request():
 
 
 @respx.mock
+def test_get_text_file_survives_a_transient_5xx():
+    """`.meta` reads go through get_text_file, so this is the path a cron poll actually takes."""
+    slept = []
+    respx.get(f"{API}/repos/{REPO}/contents/vault/secrets/x.meta").mock(
+        side_effect=[
+            httpx.Response(500),
+            httpx.Response(
+                200, json={"encoding": "base64", "content": base64.b64encode(b"{}").decode()}
+            ),
+        ]
+    )
+    assert _retrying_client(slept).get_text_file("vault/secrets/x.meta") == b"{}"
+    assert len(slept) == 1
+
+
+@respx.mock
+def test_every_read_the_polling_path_uses_is_wrapped():
+    """A read left out of IDEMPOTENT_READS is silently un-retried, which is the easy mistake."""
+    client = GitHubClient(REPO, "t", client=httpx.Client(base_url=API))
+    for name in ("get_file", "get_text_file", "list_dir", "repo_exists"):
+        assert hasattr(getattr(client, name), "__wrapped__"), f"{name} is not retried"
+
+
+@respx.mock
 def test_repo_exists_survives_a_transient_5xx():
     slept = []
     respx.get(f"{API}/repos/{REPO}").mock(
