@@ -10,6 +10,7 @@ from typing import Any, BinaryIO
 
 from timesafe import api
 from timesafe.errors import EmptyStdinError, TimesafeError, UsageError, VaultError
+from timesafe.format import humanize_seconds
 from timesafe.github import retry
 from timesafe.resolve import resolve_vault
 from timesafe.vault.vault import Vault
@@ -246,18 +247,7 @@ def _list_table(rows: list[dict[str, Any]]) -> str:
 
 
 def _humanize(seconds: int) -> str:
-    if seconds <= 0:
-        return "-"
-    days, rem = divmod(seconds, 86400)
-    hours, rem = divmod(rem, 3600)
-    minutes, secs = divmod(rem, 60)
-    if days:
-        return f"{days}d {hours}h"
-    if hours:
-        return f"{hours}h {minutes}m"
-    if minutes:
-        return f"{minutes}m {secs}s"
-    return f"{secs}s"
+    return humanize_seconds(seconds)
 
 
 # ── commands ─────────────────────────────────────────────────────────────────

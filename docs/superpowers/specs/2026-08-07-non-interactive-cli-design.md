@@ -1,8 +1,16 @@
 # time-safe — Non-Interactive CLI Design
 
 **Date:** 2026-08-07
-**Status:** Approved design (ready for implementation planning)
+**Status:** Implemented. Two of its constraints have since been deliberately lifted — see the note below.
 **Relates to:** [2026-06-05 Python Rewrite Design](2026-06-05-timesafe-python-rewrite-design.md)
+
+!!! note "Superseded by #28 (TUI ↔ api convergence)"
+
+    The non-goal "**The TUI does not change**" (§1) was right while the CLI was being built and wrong
+    once it existed: it left every CLI-side fix stopping at the CLI. The screens are now clients of
+    `timesafe.api`, so decision 8's "deliberate divergence from `InitVaultScreen`" no longer describes
+    a divergence — the TUI's Initialize and Connect screens have been replaced by one idempotent
+    *Add vault* screen over `api.init`. Everything else here still holds.
 
 ---
 

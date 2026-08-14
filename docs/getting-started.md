@@ -20,19 +20,22 @@ uv sync
 uv run timesafe
 ```
 
-## Create a vault
+## Add a vault
 
-On the **Vaults** screen press **`n`** (new) and enter:
+On the **Vaults** screen press **`n`** and enter:
 
 | Field | What to enter |
 |---|---|
 | Vault name | any label, e.g. `personal` |
 | GitHub repo | `owner/repo` for an **empty private** repo |
 | GitHub token | your PAT |
+| Create the repo | tick it if the repo doesn't exist on GitHub yet |
 
 time-safe pushes the vault structure + delivery script, writes a `.timesafe/initialized` marker, stores your token in the OS keychain, and records the vault in `~/.timesafe/vaults.json` (the only thing kept locally).
 
-To use a vault that's already initialized (e.g. from another machine), press **`c`** (connect) instead and give the repo + a token.
+The same screen registers a vault another machine already set up — it checks what exists and does only the parts still missing, so it is safe to re-run and there is no separate "connect" step.
+
+If your keychain is unavailable (a headless box, an SSH session, a Linux host with no Secret Service), the vault is still registered and you can open it by setting `TIMESAFE_GITHUB_TOKEN`.
 
 ## Add a secret
 

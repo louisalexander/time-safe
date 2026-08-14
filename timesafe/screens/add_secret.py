@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from datetime import datetime, timezone
 
 from textual import work
 from textual.app import ComposeResult
@@ -10,6 +9,9 @@ from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Header, Input, Label
 
+from timesafe import api
+from timesafe.errors import TimesafeError
+from timesafe.screens.errors import message_of
 from timesafe.validation import is_valid_email, parse_duration
 
 __all__ = ["AddSecretScreen", "is_valid_email", "parse_duration"]
@@ -47,7 +49,9 @@ class AddSecretScreen(Screen):
         name = self.query_one("#name", Input).value.strip()
         duration_raw = self.query_one("#duration", Input).value.strip()
         email = self.query_one("#email", Input).value.strip()
-        text = self.query_one("#text", Input).value.strip()
+        # Deliberately not stripped: a secret is the bytes the user chose, and `timesafe reveal` must
+        # hand back exactly what was typed here — indented blocks, padded base64, deliberate spaces.
+        text = self.query_one("#text", Input).value
         error = self.query_one("#error", Label)
         if not name or not text:
             error.update("Name and secret text are required.")
@@ -60,18 +64,22 @@ class AddSecretScreen(Screen):
         if email and not is_valid_email(email):
             error.update("Delivery email is not valid.")
             return
-        unlock_at = datetime.now(timezone.utc) + duration
-        self._do_save(name, unlock_at, text, email or None)
+        self._do_save(name, duration, text, email or None)
 
     @work
-    async def _do_save(self, name, unlock_at, text, email) -> None:
+    async def _do_save(self, name, duration, text, email) -> None:
         error = self.query_one("#error", Label)
         try:
-            await asyncio.to_thread(self.vault.put_secret, name, unlock_at, text, email)
-        except Exception as exc:  # noqa: BLE001
-            error.update(f"Failed: {exc}")
+            added = await asyncio.to_thread(
+                api.add, name=name, duration=duration, secret=text, email=email, vault=self.vault
+            )
+        except TimesafeError as exc:
+            # api.add has already cleaned up whatever the failed write committed, and says so.
+            error.update(message_of(exc))
             return
-        self.notify(f"Locked {name}")
+        # The id is the vault's identity for this secret and is not derivable from the name, so this
+        # is the one moment it is worth showing — it is what `timesafe reveal --id` wants.
+        self.notify(f"Locked {name}\nid {added['id']}", timeout=10)
         if self._on_done:
             self._on_done()
         self.app.pop_screen()

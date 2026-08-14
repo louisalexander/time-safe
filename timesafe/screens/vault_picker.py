@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import Footer, Header, Label, ListItem, ListView
 
 
 class VaultPickerScreen(Screen):
-    """Home screen: pick a vault to open, or initialize/connect one. Reads the app's registry."""
+    """Home screen: pick a vault to open, or add one. Reads the app's registry."""
 
     BINDINGS = [
-        ("n", "new_vault", "new"),
-        ("c", "connect_vault", "connect"),
+        ("n", "add_vault", "add"),
+        # 'c' used to open a separate Connect screen. Add vault subsumes it, but the key stays so
+        # muscle memory keeps working.
+        Binding("c", "add_vault", "add", show=False),
         ("r", "remove_vault", "remove"),
         ("q", "quit", "quit"),
     ]
@@ -43,21 +46,16 @@ class VaultPickerScreen(Screen):
             listview.index = 0
             listview.focus()
         else:
-            empty.update("No vaults yet — press n to initialize or c to connect.")
+            empty.update("No vaults yet — press n to add one.")
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         index = int(event.item.id.split("-")[1])
         self.app.open_vault(self._vaults[index])  # type: ignore[attr-defined]
 
-    def action_new_vault(self) -> None:
-        from timesafe.screens.init_vault import InitVaultScreen
+    def action_add_vault(self) -> None:
+        from timesafe.screens.add_vault import AddVaultScreen
 
-        self.app.push_screen(InitVaultScreen())
-
-    def action_connect_vault(self) -> None:
-        from timesafe.screens.connect_vault import ConnectVaultScreen
-
-        self.app.push_screen(ConnectVaultScreen())
+        self.app.push_screen(AddVaultScreen())
 
     async def action_remove_vault(self) -> None:
         listview = self.query_one("#vaults", ListView)

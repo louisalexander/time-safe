@@ -65,7 +65,8 @@ In the app:
 
 | Key | Does |
 |---|---|
-| `n` / `c` | initialize a new vault / connect to an existing one |
+| `n` | add a vault — creates and/or initializes the repo, or just registers one another machine already set up |
+| `c` | copy the secret id (on a secret's detail screen) |
 | `a` | add a secret — name, a duration (`30m`, `2h`, `7d`, `1d12h`), optional delivery email, text |
 | `d` | **reveal** a ready secret locally |
 | `s` | **email** a ready secret's plaintext to its address |
